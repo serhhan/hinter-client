@@ -113,7 +113,12 @@
 
 	// Reactive statement to load initial data when peer becomes available
 	$: if (peer && publicKey && !loadedTabs[activeTab] && !loading) {
-		loadTabData(activeTab);
+		// Use setTimeout to break the reactive cycle and prevent infinite loops
+		setTimeout(() => {
+			if (peer && publicKey && !loadedTabs[activeTab] && !loading) {
+				loadTabData(activeTab);
+			}
+		}, 0);
 	}
 
 	async function toggleFile(filename: string) {
