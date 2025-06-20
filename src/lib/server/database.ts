@@ -356,6 +356,77 @@ export async function createEntry(
 	return filename;
 }
 
+// Update entry content
+export async function updateEntry(
+	filename: string,
+	content: string,
+	isPinned: boolean
+): Promise<void> {
+	if (!content) {
+		throw new Error('Content is required');
+	}
+
+	const targetDir = isPinned ? path.join(ENTRIES_DIR, 'pinned') : ENTRIES_DIR;
+	const filePath = path.join(targetDir, filename);
+
+	try {
+		await fs.access(filePath);
+		await fs.writeFile(filePath, content, 'utf8');
+	} catch {
+		throw new Error('Entry not found');
+	}
+}
+
+// Delete entry
+export async function deleteEntry(filename: string, isPinned: boolean): Promise<void> {
+	const targetDir = isPinned ? path.join(ENTRIES_DIR, 'pinned') : ENTRIES_DIR;
+	const filePath = path.join(targetDir, filename);
+
+	try {
+		await fs.unlink(filePath);
+	} catch {
+		throw new Error('Entry not found');
+	}
+}
+
+// Rename entry
+export async function renameEntry(
+	oldFilename: string,
+	newFilename: string,
+	isPinned: boolean
+): Promise<void> {
+	if (!newFilename.endsWith('.md')) {
+		newFilename += '.md';
+	}
+
+	const targetDir = isPinned ? path.join(ENTRIES_DIR, 'pinned') : ENTRIES_DIR;
+	const oldPath = path.join(targetDir, oldFilename);
+	const newPath = path.join(targetDir, newFilename);
+
+	try {
+		await fs.access(oldPath);
+		await fs.rename(oldPath, newPath);
+	} catch {
+		throw new Error('Entry not found or rename failed');
+	}
+}
+
+// Toggle entry pin status (move between regular and pinned directories)
+export async function toggleEntryPin(filename: string, currentlyPinned: boolean): Promise<void> {
+	const sourceDir = currentlyPinned ? path.join(ENTRIES_DIR, 'pinned') : ENTRIES_DIR;
+	const targetDir = currentlyPinned ? ENTRIES_DIR : path.join(ENTRIES_DIR, 'pinned');
+	const sourcePath = path.join(sourceDir, filename);
+	const targetPath = path.join(targetDir, filename);
+
+	try {
+		await fs.access(sourcePath);
+		await ensureDir(targetDir);
+		await fs.rename(sourcePath, targetPath);
+	} catch {
+		throw new Error('Entry not found or move failed');
+	}
+}
+
 // Mark message as read
 export async function markMessageAsRead(
 	alias: string,
