@@ -12,7 +12,16 @@ interface EnvSettings {
 	SECRET_KEY: string;
 }
 
+interface DockerContainerInfo {
+	isRunning: boolean;
+	containerId?: string;
+	status?: string;
+	uptime?: string;
+	error?: string;
+}
+
 const envFilePath = path.join(process.cwd(), 'hinter-core-data', '.env');
+const CONTAINER_NAME = 'my-hinter-core';
 
 async function ensureEnvDirectoryAndFile(): Promise<void> {
 	// Only create directory and file when we actually need to write
@@ -62,6 +71,136 @@ async function writeEnvFile(settings: EnvSettings): Promise<void> {
 	await ensureEnvDirectoryAndFile();
 	const content = `PUBLIC_KEY=${settings.PUBLIC_KEY}\nSECRET_KEY=${settings.SECRET_KEY}\n`;
 	await fs.writeFile(envFilePath, content);
+}
+
+async function getDockerContainerStatus(): Promise<DockerContainerInfo> {
+	try {
+		// Check if container exists and get its status
+		const { stdout } = await execAsync(
+			`docker ps -a --filter name=${CONTAINER_NAME} --format "{{.ID}} {{.Status}} {{.RunningFor}}"`
+		);
+
+		if (!stdout.trim()) {
+			return { isRunning: false, error: 'Container not found' };
+		}
+
+		const [containerId, ...statusParts] = stdout.trim().split(' ');
+		const statusString = statusParts.join(' ');
+		const isRunning = statusString.toLowerCase().includes('up');
+
+		return {
+			isRunning,
+			containerId,
+			status: statusString,
+			uptime: isRunning ? statusString : undefined
+		};
+	} catch (error) {
+		console.error('Error checking Docker container status:', error);
+		return {
+			isRunning: false,
+			error: error instanceof Error ? error.message : 'Failed to check container status'
+		};
+	}
+}
+
+async function startDockerContainer(): Promise<{
+	success: boolean;
+	message: string;
+	error?: string;
+}> {
+	try {
+		// Check if container already exists
+		const status = await getDockerContainerStatus();
+
+		if (status.isRunning) {
+			return { success: true, message: 'Container is already running' };
+		}
+
+		if (status.containerId && !status.isRunning) {
+			// Container exists but is stopped, start it
+			console.log('Starting existing container...');
+			await execAsync(`docker start ${CONTAINER_NAME}`);
+			return { success: true, message: 'Container started successfully' };
+		}
+
+		// Container doesn't exist, create and start it
+		console.log('Creating and starting new container...');
+		const dockerCommand = `docker run -d --name ${CONTAINER_NAME} --restart=always --network host -v"$(pwd)/hinter-core-data":/app/hinter-core-data bbenligiray/hinter-core:latest`;
+
+		const { stdout } = await execAsync(dockerCommand, {
+			cwd: process.cwd(),
+			timeout: 60000 // 1 minute timeout
+		});
+
+		console.log('Container created with ID:', stdout.trim());
+		return { success: true, message: 'Container created and started successfully' };
+	} catch (error) {
+		console.error('Error starting Docker container:', error);
+		return {
+			success: false,
+			message: 'Failed to start container',
+			error: error instanceof Error ? error.message : 'Unknown error'
+		};
+	}
+}
+
+async function stopDockerContainer(): Promise<{
+	success: boolean;
+	message: string;
+	error?: string;
+}> {
+	try {
+		const status = await getDockerContainerStatus();
+
+		if (!status.containerId) {
+			return { success: true, message: 'Container not found' };
+		}
+
+		if (!status.isRunning) {
+			return { success: true, message: 'Container is already stopped' };
+		}
+
+		console.log('Stopping container...');
+		await execAsync(`docker stop ${CONTAINER_NAME}`);
+		return { success: true, message: 'Container stopped successfully' };
+	} catch (error) {
+		console.error('Error stopping Docker container:', error);
+		return {
+			success: false,
+			message: 'Failed to stop container',
+			error: error instanceof Error ? error.message : 'Unknown error'
+		};
+	}
+}
+
+async function removeDockerContainer(): Promise<{
+	success: boolean;
+	message: string;
+	error?: string;
+}> {
+	try {
+		const status = await getDockerContainerStatus();
+
+		if (!status.containerId) {
+			return { success: true, message: 'Container not found' };
+		}
+
+		// Stop first if running
+		if (status.isRunning) {
+			await execAsync(`docker stop ${CONTAINER_NAME}`);
+		}
+
+		console.log('Removing container...');
+		await execAsync(`docker rm ${CONTAINER_NAME}`);
+		return { success: true, message: 'Container removed successfully' };
+	} catch (error) {
+		console.error('Error removing Docker container:', error);
+		return {
+			success: false,
+			message: 'Failed to remove container',
+			error: error instanceof Error ? error.message : 'Unknown error'
+		};
+	}
 }
 
 export const GET: RequestHandler = async () => {
@@ -128,7 +267,7 @@ export const POST: RequestHandler = async ({ request }) => {
 				console.log('stderr:', stderr);
 			}
 
-			// After initialization, read the newly generated settings
+			// After successful initialization, read the generated settings
 			const settings = await readEnvFile();
 
 			return json({
@@ -137,14 +276,26 @@ export const POST: RequestHandler = async ({ request }) => {
 				settings,
 				output: stdout
 			});
+		} else if (action === 'docker-status') {
+			const status = await getDockerContainerStatus();
+			return json(status);
+		} else if (action === 'docker-start') {
+			const result = await startDockerContainer();
+			return json(result);
+		} else if (action === 'docker-stop') {
+			const result = await stopDockerContainer();
+			return json(result);
+		} else if (action === 'docker-remove') {
+			const result = await removeDockerContainer();
+			return json(result);
 		}
 
 		return json({ error: 'Invalid action' }, { status: 400 });
 	} catch (error) {
-		console.error('Error during initialization:', error);
+		console.error('Error during action:', error);
 		return json(
 			{
-				error: 'Failed to initialize environment',
+				error: 'Failed to execute action',
 				details: error instanceof Error ? error.message : 'Unknown error'
 			},
 			{ status: 500 }
