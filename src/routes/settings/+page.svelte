@@ -1,7 +1,12 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { addToast } from '$lib/stores/toast-store.js';
-	import { getSettings, updateSettings, type EnvSettings } from '$lib/services/settings-service.js';
+	import {
+		getSettings,
+		updateSettings,
+		initializeEnvironment,
+		type EnvSettings
+	} from '$lib/services/settings-service.js';
 	import EyeIcon from '../../assets/EyeIcon.svelte';
 	import EyeOffIcon from '../../assets/EyeOffIcon.svelte';
 	import CopyIcon from '../../assets/CopyIcon.svelte';
@@ -9,6 +14,7 @@
 	let settings: EnvSettings = { PUBLIC_KEY: '', SECRET_KEY: '' };
 	let isLoading = true;
 	let isSaving = false;
+	let isInitializing = false;
 	let showSecretKey = false;
 	let editedSettings: EnvSettings = { PUBLIC_KEY: '', SECRET_KEY: '' };
 
@@ -58,9 +64,44 @@
 		editedSettings = { ...settings };
 	}
 
+	async function handleInitialize() {
+		if (isInitializing) return;
+
+		try {
+			isInitializing = true;
+			addToast({
+				message: 'Initializing environment... This may take a few minutes.',
+				type: 'info'
+			});
+
+			const result = await initializeEnvironment();
+
+			if (result.success && result.settings) {
+				settings = result.settings;
+				editedSettings = { ...result.settings };
+				addToast({ message: result.message, type: 'success' });
+			} else {
+				addToast({
+					message: 'Initialization completed but no keys were generated',
+					type: 'warning'
+				});
+			}
+		} catch (error) {
+			console.error('Error during initialization:', error);
+			addToast({
+				message: error instanceof Error ? error.message : 'Failed to initialize environment',
+				type: 'error'
+			});
+		} finally {
+			isInitializing = false;
+		}
+	}
+
 	$: hasChanges =
 		editedSettings.PUBLIC_KEY !== settings.PUBLIC_KEY ||
 		editedSettings.SECRET_KEY !== settings.SECRET_KEY;
+
+	$: hasEmptyKeys = !editedSettings.PUBLIC_KEY || !editedSettings.SECRET_KEY;
 </script>
 
 <div class="flex-1 p-6">
@@ -69,6 +110,54 @@
 			<h1 class="mb-2 text-2xl font-bold text-gray-900">Settings</h1>
 			<p class="text-gray-600">Manage your environment configuration</p>
 		</div>
+
+		{#if !isLoading && hasEmptyKeys}
+			<div class="mb-8 rounded-lg border border-yellow-200 bg-yellow-50 p-4">
+				<div class="flex">
+					<div class="ml-3 flex-1">
+						<h3 class="text-sm font-medium text-yellow-800">Configuration Required</h3>
+						<div class="mt-2 text-sm text-yellow-700">
+							<p>
+								Please set both your public key and secret key to use the application.
+								{#if !editedSettings.PUBLIC_KEY && !editedSettings.SECRET_KEY}
+									Both keys are missing.
+								{:else if !editedSettings.PUBLIC_KEY}
+									Your public key is missing.
+								{:else}
+									Your secret key is missing.
+								{/if}
+							</p>
+							{#if !editedSettings.PUBLIC_KEY && !editedSettings.SECRET_KEY}
+								<p class="mt-2">
+									You can automatically generate new keys using the Docker initialization command.
+								</p>
+							{/if}
+						</div>
+						{#if !editedSettings.PUBLIC_KEY && !editedSettings.SECRET_KEY}
+							<div class="mt-3">
+								<button
+									type="button"
+									on:click={handleInitialize}
+									disabled={isInitializing}
+									class="flex items-center gap-2 rounded-md border border-transparent bg-yellow-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-yellow-700 focus:ring-2 focus:ring-yellow-500 focus:ring-offset-2 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
+								>
+									{#if isInitializing}
+										<div class="h-4 w-4 animate-spin rounded-full border-b-2 border-white"></div>
+									{/if}
+									{isInitializing ? 'Initializing...' : 'Generate Keys Automatically'}
+								</button>
+								<p class="mt-2 text-xs text-yellow-600">
+									This will run: <code class="rounded bg-yellow-100 px-1 py-0.5 text-yellow-800"
+										>docker run --rm -v"$(pwd)/hinter-core-data":/app/hinter-core-data
+										bbenligiray/hinter-core:latest npm run initialize</code
+									>
+								</p>
+							</div>
+						{/if}
+					</div>
+				</div>
+			</div>
+		{/if}
 
 		{#if isLoading}
 			<div class="flex items-center justify-center py-12">
@@ -164,28 +253,6 @@
 					</button>
 				</div>
 			</form>
-
-			{#if !editedSettings.PUBLIC_KEY || !editedSettings.SECRET_KEY}
-				<div class="mt-8 rounded-lg border border-yellow-200 bg-yellow-50 p-4">
-					<div class="flex">
-						<div class="ml-3">
-							<h3 class="text-sm font-medium text-yellow-800">Configuration Required</h3>
-							<div class="mt-2 text-sm text-yellow-700">
-								<p>
-									Please set both your public key and secret key to use the application.
-									{#if !editedSettings.PUBLIC_KEY && !editedSettings.SECRET_KEY}
-										Both keys are missing.
-									{:else if !editedSettings.PUBLIC_KEY}
-										Your public key is missing.
-									{:else}
-										Your secret key is missing.
-									{/if}
-								</p>
-							</div>
-						</div>
-					</div>
-				</div>
-			{/if}
 		{/if}
 	</div>
 </div>
