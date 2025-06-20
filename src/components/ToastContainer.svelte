@@ -34,16 +34,18 @@
 	}
 </script>
 
-<div class="fixed top-4 right-4 z-50 space-y-2 pointer-events-none">
+<div class="pointer-events-none fixed top-4 right-4 z-50 space-y-2">
 	{#each $toasts as toast (toast.id)}
 		<div
-			class="pointer-events-auto max-w-sm p-4 rounded-lg shadow-lg flex items-center gap-3 {getToastStyles(toast.type)}"
+			class="pointer-events-auto flex max-w-sm items-center gap-3 rounded-lg p-4 shadow-lg {getToastStyles(
+				toast.type
+			)}"
 			transition:slide={{ duration: 300, easing: quintOut }}
 		>
-			<span class="text-lg flex-shrink-0">{getToastIcon(toast.type)}</span>
+			<span class="flex-shrink-0 text-lg">{getToastIcon(toast.type)}</span>
 			<span class="flex-1 text-sm font-medium">{toast.message}</span>
 			<button
-				class="flex-shrink-0 ml-2 hover:opacity-70 text-lg leading-none"
+				class="ml-2 flex-shrink-0 text-lg leading-none hover:opacity-70"
 				on:click={() => removeToast(toast.id)}
 				aria-label="Close notification"
 			>
@@ -51,4 +53,4 @@
 			</button>
 		</div>
 	{/each}
-</div> 
+</div>
