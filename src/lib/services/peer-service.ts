@@ -39,7 +39,7 @@ export const removePeer = async (peer: Peer) => {
 // Get outgoing markdown files for a specific peer
 export const getPeerOutgoing = async (alias: string, publicKey: string) => {
 	const response = await fetch(
-		`/api/messages/outgoing?alias=${encodeURIComponent(alias)}&publicKey=${encodeURIComponent(publicKey)}`
+		`/api/peers/${encodeURIComponent(alias)}/${encodeURIComponent(publicKey)}?type=outgoing`
 	);
 	if (!response.ok) {
 		throw new Error('Failed to fetch outgoing files');
@@ -50,7 +50,7 @@ export const getPeerOutgoing = async (alias: string, publicKey: string) => {
 // Get incoming markdown files for a specific peer
 export const getPeerIncoming = async (alias: string, publicKey: string) => {
 	const response = await fetch(
-		`/api/messages/incoming?alias=${encodeURIComponent(alias)}&publicKey=${encodeURIComponent(publicKey)}`
+		`/api/peers/${encodeURIComponent(alias)}/${encodeURIComponent(publicKey)}?type=incoming`
 	);
 	if (!response.ok) {
 		throw new Error('Failed to fetch incoming files');

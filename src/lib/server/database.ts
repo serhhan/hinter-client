@@ -31,7 +31,7 @@ export interface ReadStatus {
 }
 
 // Paths - relative to project root
-const DATA_DIR = path.join(process.cwd(), 'data');
+const DATA_DIR = path.join(process.cwd(), 'hinter-core-data');
 const PEERS_DIR = path.join(DATA_DIR, 'peers');
 const ENTRIES_DIR = path.join(DATA_DIR, 'entries');
 const READ_STATUS_FILE = path.join(DATA_DIR, 'read_status.json');

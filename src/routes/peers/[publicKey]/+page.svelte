@@ -23,6 +23,7 @@
 			expandedFiles = new Set<string>();
 			error = null;
 			loading = false;
+			loadedTabs = { outgoing: false, incoming: false };
 		}
 	});
 
@@ -43,17 +44,33 @@
 	let error: string | null = null;
 	let pollInterval: ReturnType<typeof setInterval> | null = null;
 
+	// Track which tabs have been loaded to distinguish between "not loaded" and "empty"
+	let loadedTabs = {
+		outgoing: false,
+		incoming: false
+	};
+
 	// Tab state
 	let activeTab: 'outgoing' | 'incoming' = 'outgoing'; // Default to outgoing
 
 	// Get current files based on active tab
 	$: currentFiles = activeTab === 'outgoing' ? outgoingFiles : incomingFiles;
 
+	// Handle tab switching - load data if not already loaded
+	async function switchTab(tab: 'outgoing' | 'incoming') {
+		activeTab = tab;
+
+		// Only load if this tab hasn't been loaded yet
+		if (!loadedTabs[tab] && peer && !loading) {
+			await loadTabData(tab);
+		}
+	}
+
 	// Collapsed state for files - now tracks EXPANDED files instead of collapsed ones
 	let expandedFiles = new Set<string>();
 
-	// Load initial files data
-	async function loadFiles() {
+	// Load data for specific tab only
+	async function loadTabData(tab: 'outgoing' | 'incoming') {
 		if (!publicKey || !peer) {
 			return;
 		}
@@ -62,15 +79,18 @@
 		error = null;
 
 		try {
-			const [outgoing, incoming] = await Promise.all([
-				getPeerOutgoing(peer.alias, publicKey),
-				getPeerIncoming(peer.alias, publicKey)
-			]);
-
-			// Update local state
-			if (peer.publicKey === publicKey) {
-				outgoingFiles = outgoing;
-				incomingFiles = incoming;
+			if (tab === 'outgoing') {
+				const outgoing = await getPeerOutgoing(peer.alias, publicKey);
+				if (peer.publicKey === publicKey) {
+					outgoingFiles = outgoing;
+					loadedTabs.outgoing = true;
+				}
+			} else {
+				const incoming = await getPeerIncoming(peer.alias, publicKey);
+				if (peer.publicKey === publicKey) {
+					incomingFiles = incoming;
+					loadedTabs.incoming = true;
+				}
 			}
 		} catch (err) {
 			if (peer && peer.publicKey === publicKey) {
@@ -79,6 +99,21 @@
 		} finally {
 			loading = false;
 		}
+	}
+
+	// Load initial files data for current tab
+	async function loadFiles() {
+		if (!publicKey || !peer) {
+			return;
+		}
+
+		// Load only the current tab's data
+		await loadTabData(activeTab);
+	}
+
+	// Reactive statement to load initial data when peer becomes available
+	$: if (peer && publicKey && !loadedTabs[activeTab] && !loading) {
+		loadTabData(activeTab);
 	}
 
 	async function toggleFile(filename: string) {
@@ -154,8 +189,11 @@
 			loadFiles();
 
 			// Start polling for file updates every 7 seconds (offset from PeerList)
+			// Only poll the currently active tab to avoid unnecessary requests
 			pollInterval = setInterval(async () => {
-				await loadFiles();
+				if (peer && !loading) {
+					await loadTabData(activeTab);
+				}
 			}, 7000);
 		}
 	});
@@ -201,14 +239,9 @@
 					class="border-b-2 px-1 py-2 text-sm font-medium {activeTab === 'incoming'
 						? 'border-blue-500 text-blue-600'
 						: 'border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700'}"
-					on:click={() => (activeTab = 'incoming')}
+					on:click={() => switchTab('incoming')}
 				>
 					<div class="flex items-center gap-2">
-						<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" class="rotate-180">
-							<path
-								d="m14.523 18.787s4.501-4.505 6.255-6.26c.146-.146.219-.338.219-.53s-.073-.383-.219-.53c-1.753-1.754-6.255-6.258-6.255-6.258-.144-.145-.334-.217-.524-.217-.193 0-.385.074-.532.221-.293.292-.295.766-.004 1.056l4.978 4.978h-14.692c-.414 0-.75.336-.75.75s.336.75.75.75h14.692l-4.979 4.979c-.289.289-.286.762.006 1.054.148.148.341.222.533.222.19 0 .378-.072.522-.215z"
-							/>
-						</svg>
 						Received ({peer.incomingCount})
 					</div>
 				</button>
@@ -216,14 +249,14 @@
 					class="border-b-2 px-1 py-2 text-sm font-medium {activeTab === 'outgoing'
 						? 'border-blue-500 text-blue-600'
 						: 'border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700'}"
-					on:click={() => (activeTab = 'outgoing')}
+					on:click={() => switchTab('outgoing')}
 				>
 					<div class="flex items-center gap-2">
-						<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-							<path
-								d="m14.523 18.787s4.501-4.505 6.255-6.26c.146-.146.219-.338.219-.53s-.073-.383-.219-.53c-1.753-1.754-6.255-6.258-6.255-6.258-.144-.145-.334-.217-.524-.217-.193 0-.385.074-.532.221-.293.292-.295.766-.004 1.056l4.978 4.978h-14.692c-.414 0-.75.336-.75.75s.336.75.75.75h14.692l-4.979 4.979c-.289.289-.286.762.006 1.054.148.148.341.222.533.222.19 0 .378-.072.522-.215z"
-							/>
-						</svg>
+						{#if loading && activeTab === 'outgoing'}
+							<div
+								class="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent"
+							></div>
+						{/if}
 						Sent ({peer.outgoingCount})
 					</div>
 				</button>
@@ -233,16 +266,25 @@
 		<!-- Reports Section -->
 		<div class="space-y-3">
 			<h3 class="text-lg font-medium text-gray-900">
-				{activeTab === 'outgoing' ? 'Received' : 'Sent'} Reports
+				{activeTab === 'outgoing' ? 'Sent' : 'Received'} Reports
 			</h3>
 
 			{#if loading}
-				<div class="py-8 text-center">
-					<p class="text-gray-500">Loading reports...</p>
+				<div class="py-12 text-center">
+					<div class="inline-flex items-center justify-center">
+						<div
+							class="h-8 w-8 animate-spin rounded-full border-4 border-blue-200 border-t-blue-600"
+						/>
+					</div>
+					<p class="mt-4 text-gray-500">Loading reports...</p>
 				</div>
 			{:else if error}
 				<div class="py-8 text-center">
 					<p class="text-red-500">Error: {error}</p>
+				</div>
+			{:else if !loadedTabs[activeTab]}
+				<div class="py-8 text-center">
+					<p class="text-gray-400">Click to load {activeTab} reports</p>
 				</div>
 			{:else if currentFiles.length === 0}
 				<div class="py-8 text-center">

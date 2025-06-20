@@ -6,7 +6,7 @@ export default defineConfig({
 	plugins: [tailwindcss(), sveltekit()],
 	server: {
 		watch: {
-			ignored: ['**/data/**']
+			ignored: ['**/data/**', '**/hinter-core-data/**']
 		}
 	}
 });

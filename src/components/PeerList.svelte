@@ -93,19 +93,6 @@
 	<div class="flex-1 overflow-y-auto px-2">
 		{#if $peers.length === 0}
 			<div class="py-8 text-center">
-				<svg
-					class="mx-auto mb-2 h-8 w-8 text-gray-400"
-					fill="none"
-					viewBox="0 0 24 24"
-					stroke="currentColor"
-				>
-					<path
-						stroke-linecap="round"
-						stroke-linejoin="round"
-						stroke-width="2"
-						d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197m13.5-9a2.5 2.5 0 11-5 0 2.5 2.5 0 015 0z"
-					/>
-				</svg>
 				<p class="mb-3 text-sm text-gray-500">No peers yet</p>
 				<button
 					on:click={() => (showAddPeerModal = true)}
