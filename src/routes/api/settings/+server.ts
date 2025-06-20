@@ -22,7 +22,7 @@ interface DockerContainerInfo {
 }
 
 const envFilePath = path.join(process.cwd(), 'hinter-core-data', '.env');
-const CONTAINER_NAME = 'my-hinter-core';
+const CONTAINER_NAME = process.env.HINTER_CORE_CONTAINER_NAME || 'my-hinter-core';
 
 // Detect if we're running inside a container
 const isRunningInContainer = process.env.CONTAINER_MODE === 'true' || existsSync('/.dockerenv');

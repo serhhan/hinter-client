@@ -16,6 +16,7 @@ services:
       - HOST=0.0.0.0
       - CONTAINER_MODE=true
       - HOST_HINTER_CORE_DATA_PATH=${PWD}/hinter-core-data
+      - HINTER_CORE_CONTAINER_NAME=my-hinter-core
     depends_on:
       - hinter-core
     restart: unless-stopped
