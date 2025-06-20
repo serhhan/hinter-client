@@ -94,12 +94,6 @@
 		{#if $peers.length === 0}
 			<div class="py-8 text-center">
 				<p class="mb-3 text-sm text-gray-500">No peers yet</p>
-				<button
-					on:click={() => (showAddPeerModal = true)}
-					class="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700"
-				>
-					Add First Peer
-				</button>
 			</div>
 		{:else}
 			{#each $peers as peer}

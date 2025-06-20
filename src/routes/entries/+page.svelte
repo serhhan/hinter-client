@@ -375,12 +375,6 @@
 			{#if regularEntries.length === 0 && pinnedEntries.length === 0}
 				<div class="py-8 text-center">
 					<p class="text-gray-500">No entries found</p>
-					<button
-						on:click={() => (showCreateModal = true)}
-						class="mt-2 text-blue-600 hover:text-blue-700"
-					>
-						Create your first entry
-					</button>
 				</div>
 			{:else if regularEntries.length === 0}
 				<div class="py-8 text-center">
@@ -395,7 +389,7 @@
 									class="flex flex-1 items-center gap-3 text-left hover:bg-gray-50"
 									on:click={() => toggleEntry(entry.filename)}
 								>
-									<DocumentIcon class="text-gray-500" />
+									<DocumentIcon />
 									<div class="flex flex-col">
 										<span class="text-sm font-medium text-gray-900">{entry.filename}</span>
 										<span class="text-xs text-gray-500">
