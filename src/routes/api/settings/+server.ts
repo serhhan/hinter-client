@@ -1,6 +1,7 @@
 import type { RequestHandler } from './$types.js';
 import { json } from '@sveltejs/kit';
 import fs from 'fs/promises';
+import { existsSync } from 'fs';
 import path from 'path';
 import { exec } from 'child_process';
 import { promisify } from 'util';
@@ -22,6 +23,26 @@ interface DockerContainerInfo {
 
 const envFilePath = path.join(process.cwd(), 'hinter-core-data', '.env');
 const CONTAINER_NAME = 'my-hinter-core';
+
+// Detect if we're running inside a container
+const isRunningInContainer = process.env.CONTAINER_MODE === 'true' || existsSync('/.dockerenv');
+
+// Get the correct path for Docker volume mounting
+function getHostMountPath(): string {
+	if (isRunningInContainer) {
+		// When running in container, Docker commands need to reference the host path
+		// This is passed via environment variable from docker-compose or docker run
+		const hostPath = process.env.HOST_HINTER_CORE_DATA_PATH;
+		if (hostPath) {
+			return hostPath;
+		}
+		// Fallback - try to detect from mounted path
+		console.warn('HOST_HINTER_CORE_DATA_PATH not set, using fallback');
+		return '$(pwd)/hinter-core-data';
+	}
+	// When running directly on host
+	return path.join(process.cwd(), 'hinter-core-data');
+}
 
 async function ensureEnvDirectoryAndFile(): Promise<void> {
 	// Only create directory and file when we actually need to write
@@ -125,7 +146,8 @@ async function startDockerContainer(): Promise<{
 
 		// Container doesn't exist, create and start it
 		console.log('Creating and starting new container...');
-		const dockerCommand = `docker run -d --name ${CONTAINER_NAME} --restart=always --network host -v"$(pwd)/hinter-core-data":/app/hinter-core-data bbenligiray/hinter-core:latest`;
+		const hostPath = getHostMountPath();
+		const dockerCommand = `docker run -d --name ${CONTAINER_NAME} --restart=always --network host -v"${hostPath}":/app/hinter-core-data bbenligiray/hinter-core:latest`;
 
 		const { stdout } = await execAsync(dockerCommand, {
 			cwd: process.cwd(),
@@ -253,7 +275,8 @@ export const POST: RequestHandler = async ({ request }) => {
 			}
 
 			// Build the Docker command (remove -it flags for non-TTY environment)
-			const dockerCommand = `docker run --rm -v"$(pwd)/hinter-core-data":/app/hinter-core-data bbenligiray/hinter-core:latest npm run initialize`;
+			const hostPath = getHostMountPath();
+			const dockerCommand = `docker run --rm -v"${hostPath}":/app/hinter-core-data bbenligiray/hinter-core:latest npm run initialize`;
 
 			// Execute the Docker command
 			const { stdout, stderr } = await execAsync(dockerCommand, {

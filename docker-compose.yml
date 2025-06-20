@@ -1,0 +1,36 @@
+version: '3.8'
+
+services:
+  hinter-client:
+    build: .
+    ports:
+      - '3000:3000'
+    volumes:
+      # Mount hinter-core data directory to persist P2P keys and data
+      - ./hinter-core-data:/app/hinter-core-data
+      # Mount Docker socket to allow container management from within the app
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - HOST=0.0.0.0
+      - CONTAINER_MODE=true
+      - HOST_HINTER_CORE_DATA_PATH=${PWD}/hinter-core-data
+    depends_on:
+      - hinter-core
+    restart: unless-stopped
+    networks:
+      - hinter-network
+
+  hinter-core:
+    image: bbenligiray/hinter-core:latest
+    container_name: my-hinter-core
+    volumes:
+      - ./hinter-core-data:/app/hinter-core-data
+    restart: unless-stopped
+    network_mode: host
+    # Use host networking to match the original Docker command
+
+networks:
+  hinter-network:
+    driver: bridge
