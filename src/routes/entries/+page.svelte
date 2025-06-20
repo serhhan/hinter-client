@@ -10,6 +10,7 @@
 		toggleEntryPin,
 		removeEntry
 	} from '$lib/services/entry-service';
+	import type { Entry, CreateEntryRequest } from '$lib/types/entry';
 
 	// Icon components
 	import EditIcon from '../../assets/EditIcon.svelte';
@@ -20,16 +21,6 @@
 	import ChevronIcon from '../../assets/ChevronIcon.svelte';
 	import PlusIcon from '../../assets/PlusIcon.svelte';
 	import CloseIcon from '../../assets/CloseIcon.svelte';
-
-	// Entry interface
-	interface Entry {
-		filename: string;
-		content: string;
-		timestamp: Date;
-		size: number;
-		suffix: string;
-		isPinned: boolean;
-	}
 
 	// State
 	let entries: Entry[] = [];
@@ -86,7 +77,7 @@
 				content: newEntryContent,
 				suffix: newEntrySuffix,
 				isPinned: newEntryIsPinned
-			});
+			} as CreateEntryRequest);
 
 			addToast({
 				type: 'success',

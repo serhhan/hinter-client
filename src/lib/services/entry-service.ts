@@ -1,6 +1,6 @@
-import type { Entry } from '$lib/types/entry';
+import type { Entry, CreateEntryRequest } from '$lib/types/entry';
 
-export const getEntries = async () => {
+export const getEntries = async (): Promise<Entry[]> => {
 	const response = await fetch('/api/entries');
 	if (!response.ok) {
 		throw new Error('Failed to fetch entries');
@@ -8,7 +8,7 @@ export const getEntries = async () => {
 	return response.json();
 };
 
-export const addEntry = async (entry: Entry) => {
+export const addEntry = async (entry: CreateEntryRequest) => {
 	const response = await fetch('/api/entries', {
 		method: 'POST',
 		headers: {

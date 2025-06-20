@@ -1,6 +1,15 @@
 interface Entry {
+	filename: string;
 	content: string;
-	timestamp: string;
+	timestamp: Date;
+	size: number;
+	isPinned: boolean;
 }
 
-export type { Entry };
+interface CreateEntryRequest {
+	content: string;
+	suffix?: string;
+	isPinned?: boolean;
+}
+
+export type { Entry, CreateEntryRequest };
