@@ -1,6 +1,7 @@
 node_modules
 .storage
 .vscode
+hinter-core-data
 
 # Output
 .output
