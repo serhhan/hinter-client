@@ -10,6 +10,10 @@ interface CreateEntryRequest {
 	content: string;
 	suffix?: string;
 	isPinned?: boolean;
+	to?: string[];
+	except?: string[];
+	sourcePath?: string;
+	destinationPath?: string;
 }
 
 export type { Entry, CreateEntryRequest };

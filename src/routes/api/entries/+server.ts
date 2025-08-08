@@ -21,9 +21,29 @@ export const GET: RequestHandler = async () => {
 
 export const POST: RequestHandler = async ({ request }) => {
 	try {
-		const { content, suffix = '', isPinned = false } = await request.json();
+		const {
+			content,
+			suffix = '',
+			isPinned = false,
+			to = [],
+			except = [],
+			sourcePath = '',
+			destinationPath = ''
+		} = await request.json();
 
-		const filename = await createEntry(content, suffix, isPinned);
+		// Create metadata prefix for the content if draft report fields are provided
+		let finalContent = content;
+		if (to.length > 0 || except.length > 0 || sourcePath || destinationPath) {
+			const metadata = [];
+			if (to.length > 0) metadata.push(`to: ${JSON.stringify(to)}`);
+			if (except.length > 0) metadata.push(`except: ${JSON.stringify(except)}`);
+			if (sourcePath) metadata.push(`sourcePath: '${sourcePath}'`);
+			if (destinationPath) metadata.push(`destinationPath: '${destinationPath}'`);
+
+			finalContent = `${metadata.join(' ')}\n\n${content}`;
+		}
+
+		const filename = await createEntry(finalContent, suffix, isPinned);
 
 		return json({
 			message: 'Entry created successfully',

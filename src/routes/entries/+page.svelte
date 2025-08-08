@@ -10,7 +10,9 @@
 		toggleEntryPin,
 		removeEntry
 	} from '$lib/services/entry-service';
+	import { getPeers } from '$lib/services/peer-service';
 	import type { Entry, CreateEntryRequest } from '$lib/types/entry';
+	import type { Peer } from '$lib/types/peer';
 
 	// Icon components
 	import EditIcon from '../../assets/EditIcon.svelte';
@@ -24,6 +26,7 @@
 
 	// State
 	let entries: Entry[] = [];
+	let peers: Peer[] = [];
 	let loading = false;
 	let error: string | null = null;
 	let showCreateModal = false;
@@ -34,7 +37,67 @@
 	let newEntryContent = '';
 	let newEntryIsPinned = false;
 	let newEntrySuffix = '';
+	let newEntryTo: string[] = [];
+	let newEntryExcept: string[] = [];
+	let newEntrySourcePath = '';
+	let newEntryDestinationPath = '';
 	let creatingEntry = false;
+
+	// Dropdown states
+	let showToDropdown = false;
+	let showExceptDropdown = false;
+
+	// Helper functions for peer selection
+	function togglePeerInTo(peerAlias: string) {
+		if (newEntryTo.includes(peerAlias)) {
+			newEntryTo = newEntryTo.filter((p) => p !== peerAlias);
+		} else {
+			// Remove from except if it's there
+			newEntryExcept = newEntryExcept.filter((p) => p !== peerAlias);
+			newEntryTo = [...newEntryTo, peerAlias];
+		}
+	}
+
+	function togglePeerInExcept(peerAlias: string) {
+		if (newEntryExcept.includes(peerAlias)) {
+			newEntryExcept = newEntryExcept.filter((p) => p !== peerAlias);
+		} else {
+			// Remove from to if it's there
+			newEntryTo = newEntryTo.filter((p) => p !== peerAlias);
+			newEntryExcept = [...newEntryExcept, peerAlias];
+		}
+	}
+
+	function selectAllPeersInTo() {
+		newEntryTo = peers.map((p) => p.alias);
+		newEntryExcept = [];
+	}
+
+	function clearAllInTo() {
+		newEntryTo = [];
+	}
+
+	function selectAllPeersInExcept() {
+		newEntryExcept = peers.map((p) => p.alias);
+		newEntryTo = [];
+	}
+
+	function clearAllInExcept() {
+		newEntryExcept = [];
+	}
+
+	// Get available peers for selection (excluding those already selected in the other list)
+	$: availableForTo = peers.filter((p) => !newEntryExcept.includes(p.alias));
+	$: availableForExcept = peers.filter((p) => !newEntryTo.includes(p.alias));
+
+	// Close dropdowns when clicking outside
+	function handleClickOutside(event: MouseEvent) {
+		const target = event.target as Element;
+		if (!target.closest('.peer-dropdown')) {
+			showToDropdown = false;
+			showExceptDropdown = false;
+		}
+	}
 
 	// Edit/action state
 	let editingEntry: Entry | null = null;
@@ -60,6 +123,16 @@
 		}
 	}
 
+	// Load peers
+	async function loadPeers() {
+		try {
+			peers = await getPeers();
+		} catch (err) {
+			console.warn('Failed to load peers:', err);
+			peers = [];
+		}
+	}
+
 	// Create new entry
 	async function createEntry() {
 		if (!newEntryContent.trim()) {
@@ -76,7 +149,11 @@
 			const result = await addEntry({
 				content: newEntryContent,
 				suffix: newEntrySuffix,
-				isPinned: newEntryIsPinned
+				isPinned: newEntryIsPinned,
+				to: newEntryTo.length > 0 ? newEntryTo : undefined,
+				except: newEntryExcept.length > 0 ? newEntryExcept : undefined,
+				sourcePath: newEntrySourcePath.trim() || undefined,
+				destinationPath: newEntryDestinationPath.trim() || undefined
 			} as CreateEntryRequest);
 
 			addToast({
@@ -88,6 +165,12 @@
 			newEntryContent = '';
 			newEntrySuffix = '';
 			newEntryIsPinned = false;
+			newEntryTo = [];
+			newEntryExcept = [];
+			newEntrySourcePath = '';
+			newEntryDestinationPath = '';
+			showToDropdown = false;
+			showExceptDropdown = false;
 			showCreateModal = false;
 
 			// Reload entries
@@ -245,6 +328,7 @@
 
 	onMount(() => {
 		loadEntries();
+		loadPeers();
 	});
 </script>
 
@@ -446,7 +530,11 @@
 
 <!-- Create Entry Modal -->
 {#if showCreateModal}
-	<div class="bg-opacity-50 fixed inset-0 z-50 flex items-center justify-center bg-black">
+	<!-- svelte-ignore a11y-click-events-have-key-events a11y-no-static-element-interactions -->
+	<div
+		class="bg-opacity-50 fixed inset-0 z-50 flex items-center justify-center bg-black"
+		on:click={handleClickOutside}
+	>
 		<div class="w-full max-w-2xl rounded-lg bg-white p-6">
 			<div class="mb-4 flex items-center justify-between">
 				<h3 class="text-lg font-medium text-gray-900">Create New Entry</h3>
@@ -487,6 +575,223 @@
 					<p class="mt-1 text-xs text-gray-500">
 						Will be added to the timestamp filename (e.g., 20231201123000_my-note.md)
 					</p>
+				</div>
+
+				<!-- Draft Report Fields -->
+				<div class="border-t pt-4">
+					<h4 class="mb-3 text-sm font-medium text-gray-900">Draft Report Configuration</h4>
+
+					<!-- To (Recipients) -->
+					<div class="mb-4">
+						<label for="toField" class="mb-2 block text-sm font-medium text-gray-700"
+							>To (Recipients)</label
+						>
+						<div class="peer-dropdown relative">
+							<button
+								type="button"
+								id="toField"
+								on:click={() => (showToDropdown = !showToDropdown)}
+								class="relative w-full cursor-pointer rounded-md border border-gray-300 bg-white py-2 pr-10 pl-3 text-left focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none"
+							>
+								<span class="block truncate text-sm">
+									{#if newEntryTo.length === 0}
+										Select peers to send this report to...
+									{:else if newEntryTo.length === peers.length}
+										All peers ({newEntryTo.length})
+									{:else}
+										{newEntryTo.length} peer{newEntryTo.length !== 1 ? 's' : ''} selected
+									{/if}
+								</span>
+								<span class="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-2">
+									<svg
+										class="h-5 w-5 text-gray-400"
+										fill="none"
+										stroke="currentColor"
+										viewBox="0 0 24 24"
+									>
+										<path
+											stroke-linecap="round"
+											stroke-linejoin="round"
+											stroke-width="2"
+											d="M8 9l4-4 4 4m0 6l-4 4-4-4"
+										></path>
+									</svg>
+								</span>
+							</button>
+
+							{#if showToDropdown}
+								<div
+									class="ring-opacity-5 absolute z-10 mt-1 max-h-60 w-full overflow-auto rounded-md bg-white py-1 text-base shadow-lg ring-1 ring-black focus:outline-none"
+								>
+									<!-- Select All / Clear All buttons -->
+									<div class="border-b border-gray-200 p-2">
+										<div class="flex gap-2">
+											<button
+												type="button"
+												on:click={selectAllPeersInTo}
+												class="flex-1 rounded bg-blue-100 px-2 py-1 text-xs text-blue-700 hover:bg-blue-200"
+											>
+												Select All
+											</button>
+											<button
+												type="button"
+												on:click={clearAllInTo}
+												class="flex-1 rounded bg-gray-100 px-2 py-1 text-xs text-gray-700 hover:bg-gray-200"
+											>
+												Clear All
+											</button>
+										</div>
+									</div>
+
+									{#each availableForTo as peer}
+										<button
+											type="button"
+											on:click={() => togglePeerInTo(peer.alias)}
+											class="relative w-full cursor-pointer py-2 pr-4 pl-8 text-left text-sm select-none hover:bg-blue-50"
+										>
+											{#if newEntryTo.includes(peer.alias)}
+												<span
+													class="absolute inset-y-0 left-0 flex items-center pl-2 text-blue-600"
+												>
+													<svg class="h-4 w-4" fill="currentColor" viewBox="0 0 20 20">
+														<path
+															fill-rule="evenodd"
+															d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
+															clip-rule="evenodd"
+														></path>
+													</svg>
+												</span>
+											{/if}
+											<span class="block font-normal">{peer.alias}</span>
+										</button>
+									{/each}
+								</div>
+							{/if}
+						</div>
+						<p class="mt-1 text-xs text-gray-500">
+							Selected peers: {newEntryTo.join(', ') || 'None'}
+						</p>
+					</div>
+
+					<!-- Except -->
+					<div class="mb-4">
+						<label for="exceptField" class="mb-2 block text-sm font-medium text-gray-700"
+							>Except (Exclude)</label
+						>
+						<div class="peer-dropdown relative">
+							<button
+								type="button"
+								id="exceptField"
+								on:click={() => (showExceptDropdown = !showExceptDropdown)}
+								class="relative w-full cursor-pointer rounded-md border border-gray-300 bg-white py-2 pr-10 pl-3 text-left focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none"
+							>
+								<span class="block truncate text-sm">
+									{#if newEntryExcept.length === 0}
+										Select peers to exclude from this report...
+									{:else if newEntryExcept.length === peers.length}
+										All peers excluded ({newEntryExcept.length})
+									{:else}
+										{newEntryExcept.length} peer{newEntryExcept.length !== 1 ? 's' : ''} excluded
+									{/if}
+								</span>
+								<span class="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-2">
+									<svg
+										class="h-5 w-5 text-gray-400"
+										fill="none"
+										stroke="currentColor"
+										viewBox="0 0 24 24"
+									>
+										<path
+											stroke-linecap="round"
+											stroke-linejoin="round"
+											stroke-width="2"
+											d="M8 9l4-4 4 4m0 6l-4 4-4-4"
+										></path>
+									</svg>
+								</span>
+							</button>
+
+							{#if showExceptDropdown}
+								<div
+									class="ring-opacity-5 absolute z-10 mt-1 max-h-60 w-full overflow-auto rounded-md bg-white py-1 text-base shadow-lg ring-1 ring-black focus:outline-none"
+								>
+									<!-- Select All / Clear All buttons -->
+									<div class="border-b border-gray-200 p-2">
+										<div class="flex gap-2">
+											<button
+												type="button"
+												on:click={selectAllPeersInExcept}
+												class="flex-1 rounded bg-red-100 px-2 py-1 text-xs text-red-700 hover:bg-red-200"
+											>
+												Exclude All
+											</button>
+											<button
+												type="button"
+												on:click={clearAllInExcept}
+												class="flex-1 rounded bg-gray-100 px-2 py-1 text-xs text-gray-700 hover:bg-gray-200"
+											>
+												Clear All
+											</button>
+										</div>
+									</div>
+
+									{#each availableForExcept as peer}
+										<button
+											type="button"
+											on:click={() => togglePeerInExcept(peer.alias)}
+											class="relative w-full cursor-pointer py-2 pr-4 pl-8 text-left text-sm select-none hover:bg-red-50"
+										>
+											{#if newEntryExcept.includes(peer.alias)}
+												<span class="absolute inset-y-0 left-0 flex items-center pl-2 text-red-600">
+													<svg class="h-4 w-4" fill="currentColor" viewBox="0 0 20 20">
+														<path
+															fill-rule="evenodd"
+															d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
+															clip-rule="evenodd"
+														></path>
+													</svg>
+												</span>
+											{/if}
+											<span class="block font-normal">{peer.alias}</span>
+										</button>
+									{/each}
+								</div>
+							{/if}
+						</div>
+						<p class="mt-1 text-xs text-gray-500">
+							Excluded peers: {newEntryExcept.join(', ') || 'None'}
+						</p>
+					</div>
+
+					<!-- Source Path -->
+					<div class="mb-4">
+						<label for="sourcePath" class="block text-sm font-medium text-gray-700">
+							Source Path (optional)
+						</label>
+						<input
+							type="text"
+							id="sourcePath"
+							bind:value={newEntrySourcePath}
+							class="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none"
+							placeholder="e.g., path/to/source"
+						/>
+						<p class="mt-1 text-xs text-gray-500">Source path for the report</p>
+					</div>
+
+					<!-- Destination Path -->
+					<div class="mb-4">
+						<label for="destinationPath" class="block text-sm font-medium text-gray-700">
+							Destination Path (optional)
+						</label>
+						<input
+							type="text"
+							id="destinationPath"
+							bind:value={newEntryDestinationPath}
+							class="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none"
+							placeholder="e.g., path/to/destination"
+						/>
+						<p class="mt-1 text-xs text-gray-500">Destination path for the report</p>
+					</div>
 				</div>
 
 				<!-- Pin option -->
