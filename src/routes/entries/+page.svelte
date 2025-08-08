@@ -39,6 +39,7 @@
 
 	// View state
 	let expandedEntries = new Set<string>();
+	let syncingReports = false;
 
 	// Load entries
 	async function loadEntries() {
@@ -163,6 +164,38 @@
 		showDeleteModal = true;
 	}
 
+	// Sync reports handler
+	async function handleSyncReports() {
+		syncingReports = true;
+
+		try {
+			const response = await fetch('/api/sync', {
+				method: 'POST'
+			});
+
+			if (response.ok) {
+				const data = await response.json();
+				addToast({
+					type: 'success',
+					message: data.message
+				});
+			} else {
+				const errorData = await response.json();
+				addToast({
+					type: 'error',
+					message: errorData.error || 'Failed to sync reports'
+				});
+			}
+		} catch (error) {
+			addToast({
+				type: 'error',
+				message: 'Network error: Could not sync reports'
+			});
+		} finally {
+			syncingReports = false;
+		}
+	}
+
 	async function handleConfirmDelete() {
 		if (!editingEntry) return;
 
@@ -235,13 +268,40 @@
 			<h1 class="text-2xl font-bold text-gray-900">Entries</h1>
 			<p class="text-gray-600">Create and manage your markdown entries</p>
 		</div>
-		<button
-			on:click={() => (showCreateModal = true)}
-			class="inline-flex items-center gap-2 rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
-		>
-			<PlusIcon />
-			New Entry
-		</button>
+		<div class="flex items-center gap-3">
+			<button
+				onclick={handleSyncReports}
+				disabled={syncingReports}
+				class="flex items-center gap-2 rounded-md bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700 disabled:opacity-50"
+			>
+				{#if syncingReports}
+					<svg class="h-4 w-4 animate-spin" fill="none" viewBox="0 0 24 24">
+						<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"
+						></circle>
+						<path
+							class="opacity-75"
+							fill="currentColor"
+							d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+						></path>
+					</svg>
+					Syncing...
+				{:else}
+					<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+						<path
+							d="M12 4V1L8 5l4 4V6c3.31 0 6 2.69 6 6 0 1.01-.25 1.97-.7 2.8l1.46 1.46C19.54 15.03 20 13.57 20 12c0-4.42-3.58-8-8-8zm0 14c-3.31 0-6-2.69-6-6 0-1.01.25-1.97.7-2.8L5.24 7.74C4.46 8.97 4 10.43 4 12c0 4.42 3.58 8 8 8v3l4-4-4-4v3z"
+						/>
+					</svg>
+					Sync Reports
+				{/if}
+			</button>
+			<button
+				onclick={() => (showCreateModal = true)}
+				class="inline-flex items-center gap-2 rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+			>
+				<PlusIcon />
+				New Entry
+			</button>
+		</div>
 	</div>
 
 	{#if loading}
@@ -256,7 +316,7 @@
 	{:else if error}
 		<div class="py-8 text-center">
 			<p class="text-red-500">Error: {error}</p>
-			<button on:click={loadEntries} class="mt-2 text-blue-600 hover:text-blue-700">
+			<button onclick={loadEntries} class="mt-2 text-blue-600 hover:text-blue-700">
 				Try again
 			</button>
 		</div>
