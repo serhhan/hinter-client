@@ -4,4 +4,5 @@ export interface Peer {
 	incomingCount: number;
 	outgoingCount: number;
 	unreadCount: number;
+	groups: string[];
 }

@@ -1,5 +1,6 @@
 import fs from 'fs/promises';
 import path from 'path';
+import { getPeerGroups } from './sync-engine';
 
 // Types
 export interface Peer {
@@ -8,6 +9,7 @@ export interface Peer {
 	incomingCount: number;
 	outgoingCount: number;
 	unreadCount: number;
+	groups: string[];
 }
 
 export interface Report {
@@ -145,12 +147,16 @@ export async function getAllPeers(): Promise<Peer[]> {
 					}
 				}
 
+				// Get groups for this peer
+				const groups = await getPeerGroups(alias);
+
 				peers.push({
 					alias,
 					publicKey,
 					incomingCount,
 					outgoingCount,
-					unreadCount
+					unreadCount,
+					groups
 				});
 			}
 		}
