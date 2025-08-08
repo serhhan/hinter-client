@@ -10,6 +10,7 @@
 	} from '$lib/services/settings-service.js';
 	import EntriesIcon from '../assets/EntriesIcon.svelte';
 	import PeersIcon from '../assets/PeersIcon.svelte';
+	import GroupsIcon from '../assets/GroupsIcon.svelte';
 	import SettingsIcon from '../assets/SettingsIcon.svelte';
 	import PowerIcon from '../assets/PowerIcon.svelte';
 
@@ -77,6 +78,14 @@
 			)
 				? 'bg-gray-200 text-gray-700'
 				: ''}"><PeersIcon /></a
+		>
+		<a
+			href="/groups"
+			class="flex h-10 w-full items-center justify-center gap-2 text-gray-500 hover:text-gray-700 {page.url.pathname.includes(
+				'/groups'
+			)
+				? 'bg-gray-200 text-gray-700'
+				: ''}"><GroupsIcon /></a
 		>
 		<a
 			href="/entries"
