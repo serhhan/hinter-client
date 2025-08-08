@@ -21,6 +21,7 @@
 			outgoingFiles = [];
 			incomingFiles = [];
 			expandedFiles = new Set<string>();
+			expandedFolders = new Set<string>();
 			error = null;
 			loading = false;
 			loadedTabs = { outgoing: false, incoming: false };
@@ -31,14 +32,22 @@
 	$: peer = $peers.find((p) => p.publicKey === publicKey);
 
 	// File data - expecting arrays of file objects with name, content, size, etc.
-	let outgoingFiles: Array<{ filename: string; content: string; timestamp: string; size: number }> =
-		[];
+	let outgoingFiles: Array<{ 
+		filename: string; 
+		content: string; 
+		timestamp: string; 
+		size: number;
+		folderPath?: string;
+		isFolder?: boolean;
+	}> = [];
 	let incomingFiles: Array<{
 		filename: string;
 		content: string;
 		timestamp: string;
 		size: number;
 		isRead?: boolean;
+		folderPath?: string;
+		isFolder?: boolean;
 	}> = [];
 	let loading = false;
 	let error: string | null = null;
@@ -68,6 +77,7 @@
 
 	// Collapsed state for files - now tracks EXPANDED files instead of collapsed ones
 	let expandedFiles = new Set<string>();
+	let expandedFolders = new Set<string>();
 
 	// Load data for specific tab only
 	async function loadTabData(tab: 'outgoing' | 'incoming') {
@@ -121,14 +131,25 @@
 		}, 0);
 	}
 
-	async function toggleFile(filename: string) {
-		if (expandedFiles.has(filename)) {
-			expandedFiles.delete(filename);
+	function toggleFolder(folderPath: string) {
+		if (expandedFolders.has(folderPath)) {
+			expandedFolders.delete(folderPath);
 		} else {
-			expandedFiles.add(filename);
+			expandedFolders.add(folderPath);
+		}
+		expandedFolders = expandedFolders; // Trigger reactivity
+	}
+
+	async function toggleFile(file: any) {
+		const fileKey = file.folderPath ? `${file.folderPath}/${file.filename}` : file.filename;
+		
+		if (expandedFiles.has(fileKey)) {
+			expandedFiles.delete(fileKey);
+		} else {
+			expandedFiles.add(fileKey);
 
 			// If this is an incoming file, mark it as read
-			if (activeTab === 'incoming' && peer) {
+			if (activeTab === 'incoming' && peer && !file.isFolder) {
 				try {
 					await fetch('/api/messages/mark-read', {
 						method: 'POST',
@@ -138,7 +159,7 @@
 						body: JSON.stringify({
 							alias: peer.alias,
 							publicKey: peer.publicKey,
-							filename
+							filepath: fileKey
 						})
 					});
 					// Reload files to reflect the change
@@ -279,7 +300,7 @@
 					<div class="inline-flex items-center justify-center">
 						<div
 							class="h-8 w-8 animate-spin rounded-full border-4 border-blue-200 border-t-blue-600"
-						/>
+						></div>
 					</div>
 					<p class="mt-4 text-gray-500">Loading reports...</p>
 				</div>
@@ -297,78 +318,116 @@
 				</div>
 			{:else}
 				{#each currentFiles as file}
-					<div
-						class="rounded-lg border border-gray-200 {activeTab === 'incoming' &&
-						!(file as any).isRead
-							? 'border-blue-200 bg-blue-50'
-							: ''}"
-					>
-						<button
-							class="flex w-full items-center justify-between p-4 text-left hover:bg-gray-50"
-							on:click={() => toggleFile(file.filename)}
-						>
-							<div class="flex items-center gap-3">
+					{#if file.isFolder}
+						<!-- Folder header -->
+						<div class="rounded-lg border border-gray-300 bg-gray-50">
+							<button
+								class="flex w-full items-center justify-between p-3 text-left hover:bg-gray-100"
+								on:click={() => toggleFolder(file.folderPath ? `${file.folderPath}/${file.filename}` : file.filename)}
+							>
+								<div class="flex items-center gap-3">
+									<svg
+										width="16"
+										height="16"
+										viewBox="0 0 24 24"
+										fill="currentColor"
+										class="text-yellow-600"
+									>
+										<path d="M10,4H4C2.89,4 2,4.89 2,6V18A2,2 0 0,0 4,20H20A2,2 0 0,0 22,18V8C22,6.89 21.1,6 20,6H12L10,4Z" />
+									</svg>
+									<span class="text-sm font-medium text-gray-700">{file.filename}</span>
+								</div>
 								<svg
 									width="16"
 									height="16"
 									viewBox="0 0 24 24"
 									fill="currentColor"
-									class="text-gray-500"
+									class="transform transition-transform {expandedFolders.has(file.folderPath ? `${file.folderPath}/${file.filename}` : file.filename)
+										? ''
+										: 'rotate-180'}"
 								>
-									<path
-										d="M14,2H6A2,2 0 0,0 4,4V20A2,2 0 0,0 6,22H18A2,2 0 0,0 20,20V8L14,2M18,20H6V4H13V9H18V20Z"
-									/>
+									<path d="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6 1.41-1.41z" />
 								</svg>
-								<div class="flex flex-col">
-									<div class="flex items-center gap-2">
-										<span
-											class="text-sm font-medium {activeTab === 'incoming' && !(file as any).isRead
-												? 'text-blue-900'
-												: ''}"
-										>
-											{file.filename}
+							</button>
+						</div>
+					{:else if !file.folderPath || expandedFolders.has(file.folderPath)}
+						<!-- File item (show if not in folder or folder is expanded) -->
+						<div
+							class="rounded-lg border border-gray-200 {activeTab === 'incoming' &&
+							!(file as any).isRead
+								? 'border-blue-200 bg-blue-50'
+								: ''} {file.folderPath ? 'ml-6' : ''}"
+						>
+							<button
+								class="flex w-full items-center justify-between p-4 text-left hover:bg-gray-50"
+								on:click={() => toggleFile(file)}
+							>
+								<div class="flex items-center gap-3">
+									<svg
+										width="16"
+										height="16"
+										viewBox="0 0 24 24"
+										fill="currentColor"
+										class="text-gray-500"
+									>
+										<path
+											d="M14,2H6A2,2 0 0,0 4,4V20A2,2 0 0,0 6,22H18A2,2 0 0,0 20,20V8L14,2M18,20H6V4H13V9H18V20Z"
+										/>
+									</svg>
+									<div class="flex flex-col">
+										<div class="flex items-center gap-2">
+											<span
+												class="text-sm font-medium {activeTab === 'incoming' && !(file as any).isRead
+													? 'text-blue-900'
+													: ''}"
+											>
+												{file.filename}
+											</span>
+											{#if activeTab === 'incoming' && !(file as any).isRead}
+												<div class="h-2 w-2 rounded-full bg-blue-600"></div>
+											{/if}
+										</div>
+										<span class="text-xs text-gray-500">
+											{#if file.folderPath}
+												{file.folderPath}/
+											{/if}
+											{formatTimestamp(file.filename)}
+											{#if getFileSize(file)}
+												• {getFileSize(file)}
+											{/if}
 										</span>
-										{#if activeTab === 'incoming' && !(file as any).isRead}
-											<div class="h-2 w-2 rounded-full bg-blue-600"></div>
+									</div>
+								</div>
+								<svg
+									width="16"
+									height="16"
+									viewBox="0 0 24 24"
+									fill="currentColor"
+									class="transform transition-transform {expandedFiles.has(file.folderPath ? `${file.folderPath}/${file.filename}` : file.filename)
+										? ''
+										: 'rotate-180'}"
+								>
+									<path d="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6 1.41-1.41z" />
+								</svg>
+							</button>
+
+							{#if expandedFiles.has(file.folderPath ? `${file.folderPath}/${file.filename}` : file.filename)}
+								<div class="border-t border-gray-100 px-4 pb-4 text-sm text-gray-600">
+									<div class="mt-2 space-y-2">
+										{#if file.content}
+											<div class="prose prose-sm max-w-none rounded border bg-white p-4">
+												<MarkdownRenderer markdownContent={file.content} />
+											</div>
+										{:else}
+											<div class="py-4 text-center">
+												<p class="text-gray-400">No content available</p>
+											</div>
 										{/if}
 									</div>
-									<span class="text-xs text-gray-500">
-										{formatTimestamp(file.filename)}
-										{#if getFileSize(file)}
-											• {getFileSize(file)}
-										{/if}
-									</span>
 								</div>
-							</div>
-							<svg
-								width="16"
-								height="16"
-								viewBox="0 0 24 24"
-								fill="currentColor"
-								class="transform transition-transform {expandedFiles.has(file.filename)
-									? ''
-									: 'rotate-180'}"
-							>
-								<path d="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6 1.41-1.41z" />
-							</svg>
-						</button>
-
-						{#if expandedFiles.has(file.filename)}
-							<div class="border-t border-gray-100 px-4 pb-4 text-sm text-gray-600">
-								<div class="mt-2 space-y-2">
-									{#if file.content}
-										<div class="prose prose-sm max-w-none rounded border bg-white p-4">
-											<MarkdownRenderer markdownContent={file.content} />
-										</div>
-									{:else}
-										<div class="py-4 text-center">
-											<p class="text-gray-400">No content available</p>
-										</div>
-									{/if}
-								</div>
-							</div>
-						{/if}
-					</div>
+							{/if}
+						</div>
+					{/if}
 				{/each}
 			{/if}
 		</div>

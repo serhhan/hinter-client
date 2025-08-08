@@ -16,6 +16,8 @@ export interface Report {
 	timestamp: Date;
 	size: number;
 	isRead?: boolean;
+	folderPath?: string;
+	isFolder?: boolean;
 }
 
 export interface Entry {
@@ -75,8 +77,8 @@ export async function saveReadStatus(readStatus: ReadStatus): Promise<void> {
 	}
 }
 
-export function getFileKey(alias: string, publicKey: string, filename: string): string {
-	return `${alias}-${publicKey}:incoming:${filename}`;
+export function getFileKey(alias: string, publicKey: string, filepath: string): string {
+	return `${alias}-${publicKey}:incoming:${filepath}`;
 }
 
 // Get all peers
@@ -87,8 +89,20 @@ export async function getAllPeers(): Promise<Peer[]> {
 
 		for (const dir of peerDirs) {
 			if (dir.isDirectory()) {
-				const [alias, ...publicKeyParts] = dir.name.split('-');
-				const publicKey = publicKeyParts.join('-');
+				const alias = dir.name;
+				
+				// Read the hinter.config.json to get the publicKey
+				const configPath = path.join(PEERS_DIR, dir.name, 'hinter.config.json');
+				let publicKey = '';
+				
+				try {
+					const configContent = await fs.readFile(configPath, 'utf8');
+					const config = JSON.parse(configContent);
+					publicKey = config.publicKey;
+				} catch (error) {
+					console.warn(`Could not read config for peer ${alias}:`, error);
+					continue; // Skip this peer if config is invalid
+				}
 
 				const incomingDir = path.join(PEERS_DIR, dir.name, 'incoming');
 				const outgoingDir = path.join(PEERS_DIR, dir.name, 'outgoing');
@@ -98,13 +112,13 @@ export async function getAllPeers(): Promise<Peer[]> {
 				let unreadCount = 0;
 
 				try {
-					const incomingFiles = await fs.readdir(incomingDir);
-					const mdFiles = incomingFiles.filter((f) => f.endsWith('.md'));
-					incomingCount = mdFiles.length;
-
 					const readStatus = await getReadStatus();
-					unreadCount = mdFiles.filter((file) => {
-						const fileKey = getFileKey(alias, publicKey, file);
+					const fileList: string[] = [];
+					await collectMdFilesRecursively(incomingDir, '', fileList);
+					
+					incomingCount = fileList.length;
+					unreadCount = fileList.filter((filePath) => {
+						const fileKey = getFileKey(alias, publicKey, filePath);
 						return !readStatus[fileKey];
 					}).length;
 				} catch (error) {
@@ -153,17 +167,14 @@ export async function addPeer(alias: string, publicKey: string): Promise<void> {
 		throw new Error('Alias and public key are required');
 	}
 
-	if (alias.includes('-')) {
-		throw new Error('Alias cannot contain hyphens');
-	}
-
 	if (!/^[a-f0-9]{64}$/.test(publicKey)) {
 		throw new Error('Public key must be 64 lowercase hexadecimal characters');
 	}
 
-	const peerDir = path.join(PEERS_DIR, `${alias}-${publicKey}`);
+	const peerDir = path.join(PEERS_DIR, alias);
 	const incomingDir = path.join(peerDir, 'incoming');
 	const outgoingDir = path.join(peerDir, 'outgoing');
+	const configPath = path.join(peerDir, 'hinter.config.json');
 
 	try {
 		await fs.access(peerDir);
@@ -176,41 +187,37 @@ export async function addPeer(alias: string, publicKey: string): Promise<void> {
 
 	await ensureDir(incomingDir);
 	await ensureDir(outgoingDir);
+	
+	// Create the config file with the publicKey
+	const config = { publicKey };
+	await fs.writeFile(configPath, JSON.stringify(config, null, 2), 'utf8');
 }
 
 // Remove peer
-export async function removePeer(alias: string, publicKey: string): Promise<void> {
-	const peerDir = path.join(PEERS_DIR, `${alias}-${publicKey}`);
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+export async function removePeer(alias: string, _publicKey: string): Promise<void> {
+	const peerDir = path.join(PEERS_DIR, alias);
 	await fs.rm(peerDir, { recursive: true, force: true });
 }
 
-// Get incoming reports for a peer
+// Get incoming reports for a peer (with folder support)
 export async function getIncomingReports(alias: string, publicKey: string): Promise<Report[]> {
-	const incomingDir = path.join(PEERS_DIR, `${alias}-${publicKey}`, 'incoming');
+	const incomingDir = path.join(PEERS_DIR, alias, 'incoming');
 
 	try {
-		const files = await fs.readdir(incomingDir);
 		const reports: Report[] = [];
 		const readStatus = await getReadStatus();
 
-		for (const file of files) {
-			if (file.endsWith('.md')) {
-				const filePath = path.join(incomingDir, file);
-				const content = await fs.readFile(filePath, 'utf8');
-				const stats = await fs.stat(filePath);
+		await scanDirectoryRecursively(incomingDir, '', alias, publicKey, readStatus, reports);
 
-				const fileKey = getFileKey(alias, publicKey, file);
-				reports.push({
-					filename: file,
-					content,
-					timestamp: stats.mtime,
-					size: stats.size,
-					isRead: !!readStatus[fileKey]
-				});
+		// Sort by folder path first, then by filename
+		reports.sort((a, b) => {
+			if (a.folderPath !== b.folderPath) {
+				return (a.folderPath || '').localeCompare(b.folderPath || '');
 			}
-		}
+			return b.filename.localeCompare(a.filename);
+		});
 
-		reports.sort((a, b) => b.filename.localeCompare(a.filename));
 		return reports;
 	} catch (error) {
 		console.error('Error getting incoming reports:', error);
@@ -218,9 +225,141 @@ export async function getIncomingReports(alias: string, publicKey: string): Prom
 	}
 }
 
+// Helper function to recursively scan directories
+async function scanDirectoryRecursively(
+	dirPath: string,
+	relativePath: string,
+	alias: string,
+	publicKey: string,
+	readStatus: ReadStatus,
+	reports: Report[]
+): Promise<void> {
+	try {
+		const items = await fs.readdir(dirPath, { withFileTypes: true });
+
+		for (const item of items) {
+			const itemPath = path.join(dirPath, item.name);
+			const currentRelativePath = relativePath ? path.join(relativePath, item.name) : item.name;
+
+			if (item.isDirectory()) {
+				// Calculate unread count for this folder
+				const folderUnreadCount = await getFolderUnreadCount(
+					itemPath,
+					currentRelativePath,
+					alias,
+					publicKey,
+					readStatus
+				);
+
+				// Add folder header
+				reports.push({
+					filename: item.name,
+					content: '',
+					timestamp: new Date(),
+					size: 0,
+					isFolder: true,
+					folderPath: relativePath,
+					unreadCount: folderUnreadCount
+				});
+
+				// Recursively scan the subdirectory
+				await scanDirectoryRecursively(
+					itemPath,
+					currentRelativePath,
+					alias,
+					publicKey,
+					readStatus,
+					reports
+				);
+			} else if (item.name.endsWith('.md')) {
+				const content = await fs.readFile(itemPath, 'utf8');
+				const stats = await fs.stat(itemPath);
+
+				const fileKey = getFileKey(alias, publicKey, currentRelativePath);
+				reports.push({
+					filename: item.name,
+					content,
+					timestamp: stats.mtime,
+					size: stats.size,
+					isRead: !!readStatus[fileKey],
+					folderPath: relativePath
+				});
+			}
+		}
+	} catch (error) {
+		console.warn(`Error reading directory ${dirPath}:`, error);
+	}
+}
+
+// Helper function to calculate unread count for a specific folder
+async function getFolderUnreadCount(
+	folderPath: string,
+	relativeFolderPath: string,
+	alias: string,
+	publicKey: string,
+	readStatus: ReadStatus
+): Promise<number> {
+	let unreadCount = 0;
+
+	try {
+		const items = await fs.readdir(folderPath, { withFileTypes: true });
+
+		for (const item of items) {
+			const itemPath = path.join(folderPath, item.name);
+			const currentRelativePath = path.join(relativeFolderPath, item.name);
+
+			if (item.isDirectory()) {
+				// Recursively count unread files in subdirectories
+				const subfolderUnreadCount = await getFolderUnreadCount(
+					itemPath,
+					currentRelativePath,
+					alias,
+					publicKey,
+					readStatus
+				);
+				unreadCount += subfolderUnreadCount;
+			} else if (item.name.endsWith('.md')) {
+				const fileKey = getFileKey(alias, publicKey, currentRelativePath);
+				if (!readStatus[fileKey]) {
+					unreadCount++;
+				}
+			}
+		}
+	} catch (error) {
+		console.warn(`Error reading folder ${folderPath}:`, error);
+	}
+
+	return unreadCount;
+}
+
+// Helper function to collect MD files recursively for counting
+async function collectMdFilesRecursively(
+	dirPath: string,
+	relativePath: string,
+	fileList: string[]
+): Promise<void> {
+	try {
+		const items = await fs.readdir(dirPath, { withFileTypes: true });
+
+		for (const item of items) {
+			const itemPath = path.join(dirPath, item.name);
+			const currentRelativePath = relativePath ? path.join(relativePath, item.name) : item.name;
+
+			if (item.isDirectory()) {
+				await collectMdFilesRecursively(itemPath, currentRelativePath, fileList);
+			} else if (item.name.endsWith('.md')) {
+				fileList.push(currentRelativePath);
+			}
+		}
+	} catch (error) {
+		console.warn(`Error reading directory ${dirPath}:`, error);
+	}
+}
+
 // Get outgoing reports for a peer
-export async function getOutgoingReports(alias: string, publicKey: string): Promise<Report[]> {
-	const outgoingDir = path.join(PEERS_DIR, `${alias}-${publicKey}`, 'outgoing');
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+export async function getOutgoingReports(alias: string, _publicKey: string): Promise<Report[]> {
+	const outgoingDir = path.join(PEERS_DIR, alias, 'outgoing');
 
 	try {
 		const files = await fs.readdir(outgoingDir);
@@ -265,7 +404,7 @@ export async function createOutgoingReport(
 		.replace(/[-T:.Z]/g, '')
 		.slice(0, 14);
 	const filename = `${timestamp}${suffix}.md`;
-	const outgoingDir = path.join(PEERS_DIR, `${alias}-${publicKey}`, 'outgoing');
+	const outgoingDir = path.join(PEERS_DIR, alias, 'outgoing');
 	const filePath = path.join(outgoingDir, filename);
 
 	await ensureDir(outgoingDir);
@@ -431,10 +570,10 @@ export async function toggleEntryPin(filename: string, currentlyPinned: boolean)
 export async function markMessageAsRead(
 	alias: string,
 	publicKey: string,
-	filename: string
+	filepath: string
 ): Promise<void> {
 	const readStatus = await getReadStatus();
-	const fileKey = getFileKey(alias, publicKey, filename);
+	const fileKey = getFileKey(alias, publicKey, filepath);
 	readStatus[fileKey] = true;
 	await saveReadStatus(readStatus);
 }
