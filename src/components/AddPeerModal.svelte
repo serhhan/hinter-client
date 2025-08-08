@@ -98,11 +98,13 @@
 
 {#if isOpen}
 	<div
-		class="bg-opacity-50 fixed inset-0 z-50 flex items-center justify-center bg-black p-4"
+		class="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4 backdrop-blur-sm"
 		on:click={handleBackdropClick}
+		on:keydown={(e) => e.key === 'Enter' && closeModal()}
 		role="dialog"
 		aria-modal="true"
 		aria-labelledby="modal-title"
+		tabindex="-1"
 	>
 		<div class="w-full max-w-md rounded-lg bg-white p-6">
 			<div class="mb-6 flex items-center justify-between">
