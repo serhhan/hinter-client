@@ -5,7 +5,7 @@ import { getAllPeers, addPeer as addPeerToDB } from '$lib/server/database';
 export const GET: RequestHandler = async () => {
 	try {
 		const peers = await getAllPeers();
-		return json(peers);
+		return json({ peers });
 	} catch (error) {
 		console.error('Error fetching peers:', error);
 		return json({ error: 'Failed to fetch peers' }, { status: 500 });

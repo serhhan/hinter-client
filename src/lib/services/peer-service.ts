@@ -5,7 +5,8 @@ export const getPeers = async () => {
 	if (!response.ok) {
 		throw new Error('Failed to fetch peers');
 	}
-	return response.json();
+	const data = await response.json();
+	return data.peers;
 };
 
 export const addPeer = async (peer: Peer) => {
