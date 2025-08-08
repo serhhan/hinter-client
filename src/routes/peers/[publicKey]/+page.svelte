@@ -32,13 +32,14 @@
 	$: peer = $peers.find((p) => p.publicKey === publicKey);
 
 	// File data - expecting arrays of file objects with name, content, size, etc.
-	let outgoingFiles: Array<{ 
-		filename: string; 
-		content: string; 
-		timestamp: string; 
+	let outgoingFiles: Array<{
+		filename: string;
+		content: string;
+		timestamp: string;
 		size: number;
 		folderPath?: string;
 		isFolder?: boolean;
+		unreadCount?: number;
 	}> = [];
 	let incomingFiles: Array<{
 		filename: string;
@@ -48,6 +49,7 @@
 		isRead?: boolean;
 		folderPath?: string;
 		isFolder?: boolean;
+		unreadCount?: number;
 	}> = [];
 	let loading = false;
 	let error: string | null = null;
@@ -142,7 +144,7 @@
 
 	async function toggleFile(file: any) {
 		const fileKey = file.folderPath ? `${file.folderPath}/${file.filename}` : file.filename;
-		
+
 		if (expandedFiles.has(fileKey)) {
 			expandedFiles.delete(fileKey);
 		} else {
@@ -323,7 +325,10 @@
 						<div class="rounded-lg border border-gray-300 bg-gray-50">
 							<button
 								class="flex w-full items-center justify-between p-3 text-left hover:bg-gray-100"
-								on:click={() => toggleFolder(file.folderPath ? `${file.folderPath}/${file.filename}` : file.filename)}
+								on:click={() =>
+									toggleFolder(
+										file.folderPath ? `${file.folderPath}/${file.filename}` : file.filename
+									)}
 							>
 								<div class="flex items-center gap-3">
 									<svg
@@ -333,16 +338,29 @@
 										fill="currentColor"
 										class="text-yellow-600"
 									>
-										<path d="M10,4H4C2.89,4 2,4.89 2,6V18A2,2 0 0,0 4,20H20A2,2 0 0,0 22,18V8C22,6.89 21.1,6 20,6H12L10,4Z" />
+										<path
+											d="M10,4H4C2.89,4 2,4.89 2,6V18A2,2 0 0,0 4,20H20A2,2 0 0,0 22,18V8C22,6.89 21.1,6 20,6H12L10,4Z"
+										/>
 									</svg>
-									<span class="text-sm font-medium text-gray-700">{file.filename}</span>
+									<div class="flex items-center gap-2">
+										<span class="text-sm font-medium text-gray-700">{file.filename}</span>
+										{#if file.unreadCount && file.unreadCount > 0}
+											<div
+												class="flex h-5 w-5 items-center justify-center rounded-full bg-blue-500 text-xs text-white"
+											>
+												{file.unreadCount}
+											</div>
+										{/if}
+									</div>
 								</div>
 								<svg
 									width="16"
 									height="16"
 									viewBox="0 0 24 24"
 									fill="currentColor"
-									class="transform transition-transform {expandedFolders.has(file.folderPath ? `${file.folderPath}/${file.filename}` : file.filename)
+									class="transform transition-transform {expandedFolders.has(
+										file.folderPath ? `${file.folderPath}/${file.filename}` : file.filename
+									)
 										? ''
 										: 'rotate-180'}"
 								>
@@ -377,7 +395,8 @@
 									<div class="flex flex-col">
 										<div class="flex items-center gap-2">
 											<span
-												class="text-sm font-medium {activeTab === 'incoming' && !(file as any).isRead
+												class="text-sm font-medium {activeTab === 'incoming' &&
+												!(file as any).isRead
 													? 'text-blue-900'
 													: ''}"
 											>
@@ -403,7 +422,9 @@
 									height="16"
 									viewBox="0 0 24 24"
 									fill="currentColor"
-									class="transform transition-transform {expandedFiles.has(file.folderPath ? `${file.folderPath}/${file.filename}` : file.filename)
+									class="transform transition-transform {expandedFiles.has(
+										file.folderPath ? `${file.folderPath}/${file.filename}` : file.filename
+									)
 										? ''
 										: 'rotate-180'}"
 								>

@@ -18,6 +18,7 @@ export interface Report {
 	isRead?: boolean;
 	folderPath?: string;
 	isFolder?: boolean;
+	unreadCount?: number; // For folders, count of unread files within
 }
 
 export interface Entry {
@@ -90,11 +91,11 @@ export async function getAllPeers(): Promise<Peer[]> {
 		for (const dir of peerDirs) {
 			if (dir.isDirectory()) {
 				const alias = dir.name;
-				
+
 				// Read the hinter.config.json to get the publicKey
 				const configPath = path.join(PEERS_DIR, dir.name, 'hinter.config.json');
 				let publicKey = '';
-				
+
 				try {
 					const configContent = await fs.readFile(configPath, 'utf8');
 					const config = JSON.parse(configContent);
@@ -115,7 +116,7 @@ export async function getAllPeers(): Promise<Peer[]> {
 					const readStatus = await getReadStatus();
 					const fileList: string[] = [];
 					await collectMdFilesRecursively(incomingDir, '', fileList);
-					
+
 					incomingCount = fileList.length;
 					unreadCount = fileList.filter((filePath) => {
 						const fileKey = getFileKey(alias, publicKey, filePath);
@@ -187,7 +188,7 @@ export async function addPeer(alias: string, publicKey: string): Promise<void> {
 
 	await ensureDir(incomingDir);
 	await ensureDir(outgoingDir);
-	
+
 	// Create the config file with the publicKey
 	const config = { publicKey };
 	await fs.writeFile(configPath, JSON.stringify(config, null, 2), 'utf8');
