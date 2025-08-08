@@ -257,6 +257,22 @@
 						</svg>
 					</button>
 				</div>
+
+				<!-- Group membership -->
+				{#if peer.groups && peer.groups.length > 0}
+					<div class="mt-3">
+						<p class="mb-2 text-sm font-medium text-gray-700">Member of groups:</p>
+						<div class="flex flex-wrap gap-1">
+							{#each peer.groups as group}
+								<span
+									class="inline-flex items-center rounded-full bg-blue-100 px-2.5 py-1 text-sm font-medium text-blue-800"
+								>
+									{group}
+								</span>
+							{/each}
+						</div>
+					</div>
+				{/if}
 			</div>
 		</div>
 
