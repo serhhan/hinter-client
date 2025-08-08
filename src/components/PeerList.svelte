@@ -9,6 +9,21 @@
 
 	let showAddPeerModal = false;
 	let pollInterval: NodeJS.Timeout | null = null;
+	let selectedGroup = 'all';
+	let availableGroups: string[] = [];
+
+	// Calculate available groups from all peers
+	$: {
+		const groupSet = new Set<string>();
+		$peers.forEach((peer) => {
+			peer.groups.forEach((group) => groupSet.add(group));
+		});
+		availableGroups = Array.from(groupSet).sort();
+	}
+
+	// Filter peers based on selected group
+	$: filteredPeers =
+		selectedGroup === 'all' ? $peers : $peers.filter((peer) => peer.groups.includes(selectedGroup));
 
 	onMount(async () => {
 		// Initial load without notifications
@@ -89,14 +104,39 @@
 		</button>
 	</div>
 
+	<!-- Group Filter -->
+	{#if availableGroups.length > 0}
+		<div class="mb-4 px-4">
+			<label for="group-filter" class="mb-1 block text-xs font-medium text-gray-700"
+				>Filter by Group</label
+			>
+			<select
+				id="group-filter"
+				bind:value={selectedGroup}
+				class="w-full rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+			>
+				<option value="all">All Groups ({$peers.length})</option>
+				{#each availableGroups.filter((g) => g !== 'all') as group}
+					<option value={group}>
+						{group} ({$peers.filter((p) => p.groups.includes(group)).length})
+					</option>
+				{/each}
+			</select>
+		</div>
+	{/if}
+
 	<!-- Peer Cards with Remove Buttons -->
 	<div class="flex-1 overflow-y-auto px-2">
 		{#if $peers.length === 0}
 			<div class="py-8 text-center">
 				<p class="mb-3 text-sm text-gray-500">No peers yet</p>
 			</div>
+		{:else if filteredPeers.length === 0}
+			<div class="py-8 text-center">
+				<p class="mb-3 text-sm text-gray-500">No peers in "{selectedGroup}" group</p>
+			</div>
 		{:else}
-			{#each $peers as peer}
+			{#each filteredPeers as peer}
 				<div class="group relative mb-2">
 					<PeerCard {peer} />
 					<!-- Remove Button (appears on hover) -->
