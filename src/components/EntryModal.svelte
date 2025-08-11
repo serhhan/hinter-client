@@ -55,20 +55,21 @@
 			? destinationPath.replace(/.md$/, '') // Remove .md if present
 			: mode === 'create'
 				? suffix || 'report'
-				: filename || 'report'
+				: destinationPath || '' // Don't create folder in edit mode unless explicitly set
 	);
 
 	// Auto-generated filename with realistic timestamp
 	const autoFilename = $derived(() => {
-		const now = new Date();
-		const timestamp = now
-			.toISOString()
-			.replace(/[-T:.Z]/g, '')
-			.slice(0, 14);
 		if (mode === 'create') {
+			const now = new Date();
+			const timestamp = now
+				.toISOString()
+				.replace(/[-T:.Z]/g, '')
+				.slice(0, 14);
 			return `${timestamp}${suffix ? `-${suffix}` : ''}.md`;
 		} else {
-			return `${timestamp}${filename ? `-${filename}` : ''}.md`;
+			// In edit mode, show existing filename unless it's changed
+			return entry?.filename || 'untitled.md';
 		}
 	});
 
@@ -121,7 +122,7 @@
 			to,
 			except,
 			sourceFiles: uploadedFilePaths,
-			destinationPath: packageName
+			destinationPath: packageName || sourceFiles.length > 0 ? packageName || 'report' : ''
 		});
 	}
 
@@ -349,7 +350,7 @@
 							/>
 							{#if !destinationPathValidation.isValid}
 								<p class="mt-1 text-xs text-red-600">{destinationPathValidation.error}</p>
-							{:else if packageName !== 'report' || sourceFiles.length > 0}
+							{:else if (mode === 'create' && (packageName !== 'report' || sourceFiles.length > 0)) || (mode === 'edit' && (packageName || sourceFiles.length > 0))}
 								<!-- Visual file structure preview - show folder when package name is set OR files exist -->
 								<div class="mt-2 rounded-md bg-gray-50 p-3 font-mono text-xs">
 									<div class="mb-1 text-gray-600">📦 Package structure:</div>
@@ -379,7 +380,7 @@
 								</div>
 							{:else}
 								<p class="mt-1 text-xs text-gray-500">
-									Will create: <strong>{autoFilename()}</strong>
+									Current filename: <strong>{autoFilename()}</strong>
 								</p>
 							{/if}
 						</div>
