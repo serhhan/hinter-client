@@ -86,6 +86,8 @@
 		// Reload peers without notifications
 		loadPeers(false);
 	}
+
+
 </script>
 
 <div class="flex h-full flex-col rounded-r-md bg-white/80 py-4">
@@ -164,3 +166,5 @@
 	onClose={() => (showAddPeerModal = false)}
 	onPeerAdded={handlePeerAdded}
 />
+
+

@@ -200,143 +200,129 @@ export async function addPeer(alias: string, publicKey: string): Promise<void> {
 	await fs.writeFile(configPath, JSON.stringify(config, null, 2), 'utf8');
 }
 
+// Update peer alias
+export async function updatePeerAlias(
+	oldAlias: string,
+	publicKey: string,
+	newAlias: string
+): Promise<void> {
+	const oldPeerDir = path.join(PEERS_DIR, oldAlias);
+	const newPeerDir = path.join(PEERS_DIR, newAlias);
+
+	// Check if old peer exists
+	try {
+		await fs.access(oldPeerDir);
+	} catch {
+		throw new Error(`Peer with alias "${oldAlias}" not found`);
+	}
+
+	// Check if new alias already exists
+	try {
+		await fs.access(newPeerDir);
+		throw new Error(`Peer with alias "${newAlias}" already exists`);
+	} catch (error) {
+		// If access fails, the directory doesn't exist - which is what we want
+		if (error instanceof Error && error.message.includes('already exists')) {
+			throw error;
+		}
+	}
+
+	// Verify public key matches
+	const configPath = path.join(oldPeerDir, 'hinter.config.json');
+	try {
+		const configContent = await fs.readFile(configPath, 'utf8');
+		const config = JSON.parse(configContent);
+		if (config.publicKey !== publicKey) {
+			throw new Error('Public key mismatch');
+		}
+	} catch (error) {
+		if (error instanceof Error && error.message === 'Public key mismatch') {
+			throw error;
+		}
+		throw new Error('Invalid peer configuration');
+	}
+
+	// Rename the directory
+	await fs.rename(oldPeerDir, newPeerDir);
+
+	// Update any group configurations that reference this peer
+	try {
+		const { updatePeerConfig, getPeerConfig } = await import('./sync-engine');
+
+		// Get the peer's current groups
+		const peerConfig = await getPeerConfig(newAlias).catch(() => ({ publicKey, groups: [] }));
+
+		// Update the peer config with the new alias (the config file moved with the directory)
+		await updatePeerConfig(newAlias, peerConfig);
+	} catch (error) {
+		console.warn('Failed to update group configurations after peer rename:', error);
+		// Don't fail the operation - the peer was successfully renamed
+	}
+}
+
+// Update peer public key
+export async function updatePeerPublicKey(
+	alias: string,
+	oldPublicKey: string,
+	newPublicKey: string
+): Promise<void> {
+	const peerDir = path.join(PEERS_DIR, alias);
+
+	// Check if peer exists
+	try {
+		await fs.access(peerDir);
+	} catch {
+		throw new Error(`Peer with alias "${alias}" not found`);
+	}
+
+	// Verify old public key matches
+	const configPath = path.join(peerDir, 'hinter.config.json');
+	try {
+		const configContent = await fs.readFile(configPath, 'utf8');
+		const config = JSON.parse(configContent);
+		if (config.publicKey !== oldPublicKey) {
+			throw new Error('Public key mismatch');
+		}
+	} catch (error) {
+		if (error instanceof Error && error.message === 'Public key mismatch') {
+			throw error;
+		}
+		throw new Error('Invalid peer configuration');
+	}
+
+	// Check if new public key already exists
+	const allPeers = await getAllPeers();
+	const existingPeer = allPeers.find((p) => p.publicKey === newPublicKey);
+	if (existingPeer) {
+		throw new Error(`Public key already exists for peer "${existingPeer.alias}"`);
+	}
+
+	// Update the config file with new public key
+	const config = { publicKey: newPublicKey };
+	await fs.writeFile(configPath, JSON.stringify(config, null, 2), 'utf8');
+
+	// Update any group configurations that reference this peer
+	try {
+		const { updatePeerConfig, getPeerConfig } = await import('./sync-engine');
+
+		// Get the peer's current groups and update with new public key
+		const peerConfig = await getPeerConfig(alias).catch(() => ({
+			publicKey: newPublicKey,
+			groups: []
+		}));
+		peerConfig.publicKey = newPublicKey;
+		await updatePeerConfig(alias, peerConfig);
+	} catch (error) {
+		console.warn('Failed to update group configurations after public key change:', error);
+		// Don't fail the operation - the public key was successfully updated
+	}
+}
+
 // Remove peer
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 export async function removePeer(alias: string, _publicKey: string): Promise<void> {
 	const peerDir = path.join(PEERS_DIR, alias);
 	await fs.rm(peerDir, { recursive: true, force: true });
-}
-
-// Get incoming reports for a peer (with folder support)
-export async function getIncomingReports(alias: string, publicKey: string): Promise<Report[]> {
-	const incomingDir = path.join(PEERS_DIR, alias, 'incoming');
-
-	try {
-		const reports: Report[] = [];
-		const readStatus = await getReadStatus();
-
-		await scanDirectoryRecursively(incomingDir, '', alias, publicKey, readStatus, reports);
-
-		// Sort by folder path first, then by filename
-		reports.sort((a, b) => {
-			if (a.folderPath !== b.folderPath) {
-				return (a.folderPath || '').localeCompare(b.folderPath || '');
-			}
-			return b.filename.localeCompare(a.filename);
-		});
-
-		return reports;
-	} catch (error) {
-		console.error('Error getting incoming reports:', error);
-		return [];
-	}
-}
-
-// Helper function to recursively scan directories
-async function scanDirectoryRecursively(
-	dirPath: string,
-	relativePath: string,
-	alias: string,
-	publicKey: string,
-	readStatus: ReadStatus,
-	reports: Report[]
-): Promise<void> {
-	try {
-		const items = await fs.readdir(dirPath, { withFileTypes: true });
-
-		for (const item of items) {
-			const itemPath = path.join(dirPath, item.name);
-			const currentRelativePath = relativePath ? path.join(relativePath, item.name) : item.name;
-
-			if (item.isDirectory()) {
-				// Calculate unread count for this folder
-				const folderUnreadCount = await getFolderUnreadCount(
-					itemPath,
-					currentRelativePath,
-					alias,
-					publicKey,
-					readStatus
-				);
-
-				// Add folder header
-				reports.push({
-					filename: item.name,
-					content: '',
-					timestamp: new Date(),
-					size: 0,
-					isFolder: true,
-					folderPath: relativePath,
-					unreadCount: folderUnreadCount
-				});
-
-				// Recursively scan the subdirectory
-				await scanDirectoryRecursively(
-					itemPath,
-					currentRelativePath,
-					alias,
-					publicKey,
-					readStatus,
-					reports
-				);
-			} else if (item.name.endsWith('.md')) {
-				const content = await fs.readFile(itemPath, 'utf8');
-				const stats = await fs.stat(itemPath);
-
-				const fileKey = getFileKey(alias, publicKey, currentRelativePath);
-				reports.push({
-					filename: item.name,
-					content,
-					timestamp: stats.mtime,
-					size: stats.size,
-					isRead: !!readStatus[fileKey],
-					folderPath: relativePath
-				});
-			}
-		}
-	} catch (error) {
-		console.warn(`Error reading directory ${dirPath}:`, error);
-	}
-}
-
-// Helper function to calculate unread count for a specific folder
-async function getFolderUnreadCount(
-	folderPath: string,
-	relativeFolderPath: string,
-	alias: string,
-	publicKey: string,
-	readStatus: ReadStatus
-): Promise<number> {
-	let unreadCount = 0;
-
-	try {
-		const items = await fs.readdir(folderPath, { withFileTypes: true });
-
-		for (const item of items) {
-			const itemPath = path.join(folderPath, item.name);
-			const currentRelativePath = path.join(relativeFolderPath, item.name);
-
-			if (item.isDirectory()) {
-				// Recursively count unread files in subdirectories
-				const subfolderUnreadCount = await getFolderUnreadCount(
-					itemPath,
-					currentRelativePath,
-					alias,
-					publicKey,
-					readStatus
-				);
-				unreadCount += subfolderUnreadCount;
-			} else if (item.name.endsWith('.md')) {
-				const fileKey = getFileKey(alias, publicKey, currentRelativePath);
-				if (!readStatus[fileKey]) {
-					unreadCount++;
-				}
-			}
-		}
-	} catch (error) {
-		console.warn(`Error reading folder ${folderPath}:`, error);
-	}
-
-	return unreadCount;
 }
 
 // Helper function to collect MD files recursively for counting
@@ -360,38 +346,6 @@ async function collectMdFilesRecursively(
 		}
 	} catch (error) {
 		console.warn(`Error reading directory ${dirPath}:`, error);
-	}
-}
-
-// Get outgoing reports for a peer
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-export async function getOutgoingReports(alias: string, _publicKey: string): Promise<Report[]> {
-	const outgoingDir = path.join(PEERS_DIR, alias, 'outgoing');
-
-	try {
-		const files = await fs.readdir(outgoingDir);
-		const reports: Report[] = [];
-
-		for (const file of files) {
-			if (file.endsWith('.md')) {
-				const filePath = path.join(outgoingDir, file);
-				const content = await fs.readFile(filePath, 'utf8');
-				const stats = await fs.stat(filePath);
-
-				reports.push({
-					filename: file,
-					content,
-					timestamp: stats.mtime,
-					size: stats.size
-				});
-			}
-		}
-
-		reports.sort((a, b) => b.filename.localeCompare(a.filename));
-		return reports;
-	} catch (error) {
-		console.error('Error getting outgoing reports:', error);
-		return [];
 	}
 }
 
@@ -583,4 +537,200 @@ export async function markMessageAsRead(
 	const fileKey = getFileKey(alias, publicKey, filepath);
 	readStatus[fileKey] = true;
 	await saveReadStatus(readStatus);
+}
+
+// Get outgoing reports for a specific peer
+export async function getOutgoingReports(alias: string, publicKey: string) {
+	const peerDir = path.join(PEERS_DIR, alias);
+	const outgoingDir = path.join(peerDir, 'outgoing');
+
+	try {
+		// Check if peer exists and public key matches
+		const configPath = path.join(peerDir, 'hinter.config.json');
+		const configContent = await fs.readFile(configPath, 'utf8');
+		const config = JSON.parse(configContent);
+
+		if (config.publicKey !== publicKey) {
+			throw new Error('Public key mismatch');
+		}
+
+		// Check if outgoing directory exists
+		try {
+			await fs.access(outgoingDir);
+		} catch {
+			return []; // No outgoing files
+		}
+
+		// Read all files recursively
+		const files = await readFilesRecursively(outgoingDir);
+		return files;
+	} catch (error) {
+		console.error('Error reading outgoing reports:', error);
+		throw error;
+	}
+}
+
+// Get incoming reports for a specific peer with folder structure and read status
+export async function getIncomingReports(alias: string, publicKey: string) {
+	const peerDir = path.join(PEERS_DIR, alias);
+	const incomingDir = path.join(peerDir, 'incoming');
+
+	try {
+		// Check if peer exists and public key matches
+		const configPath = path.join(peerDir, 'hinter.config.json');
+		const configContent = await fs.readFile(configPath, 'utf8');
+		const config = JSON.parse(configContent);
+
+		if (config.publicKey !== publicKey) {
+			throw new Error('Public key mismatch');
+		}
+
+		// Check if incoming directory exists
+		try {
+			await fs.access(incomingDir);
+		} catch {
+			return []; // No incoming files
+		}
+
+		// Get read status
+		const readStatus = await getReadStatus();
+
+		// Read all files recursively with read status
+		const files = await readFilesRecursivelyWithStatus(
+			incomingDir,
+			'',
+			alias,
+			publicKey,
+			readStatus
+		);
+		return files;
+	} catch (error) {
+		console.error('Error reading incoming reports:', error);
+		throw error;
+	}
+}
+
+// Helper function to read files recursively
+async function readFilesRecursively(
+	dirPath: string,
+	basePath = ''
+): Promise<Array<{ filename: string; content: string; size?: number; folderPath?: string }>> {
+	const files: Array<{ filename: string; content: string; size?: number; folderPath?: string }> =
+		[];
+
+	try {
+		const items = await fs.readdir(dirPath, { withFileTypes: true });
+
+		for (const item of items) {
+			const itemPath = path.join(dirPath, item.name);
+			const relativePath = basePath ? `${basePath}/${item.name}` : item.name;
+
+			if (item.isDirectory()) {
+				// Recursively read subdirectory
+				const subFiles = await readFilesRecursively(itemPath, relativePath);
+				files.push(...subFiles);
+			} else if (item.isFile() && (item.name.endsWith('.md') || item.name.endsWith('.txt'))) {
+				// Read markdown or text file
+				try {
+					const content = await fs.readFile(itemPath, 'utf8');
+					const stats = await fs.stat(itemPath);
+
+					files.push({
+						filename: item.name,
+						content: content,
+						size: stats.size,
+						folderPath: basePath || undefined
+					});
+				} catch (readError) {
+					console.warn(`Failed to read file ${itemPath}:`, readError);
+				}
+			}
+		}
+	} catch (error) {
+		console.error(`Error reading directory ${dirPath}:`, error);
+	}
+
+	return files;
+}
+
+// Helper function to read files recursively with read status
+async function readFilesRecursivelyWithStatus(
+	dirPath: string,
+	basePath: string,
+	alias: string,
+	publicKey: string,
+	readStatus: ReadStatus
+): Promise<
+	Array<{
+		filename: string;
+		content: string;
+		size?: number;
+		folderPath?: string;
+		isRead?: boolean;
+		timestamp?: Date;
+		isFolder?: boolean;
+	}>
+> {
+	const files: Array<{
+		filename: string;
+		content: string;
+		size?: number;
+		folderPath?: string;
+		isRead?: boolean;
+		timestamp?: Date;
+		isFolder?: boolean;
+	}> = [];
+
+	try {
+		const items = await fs.readdir(dirPath, { withFileTypes: true });
+
+		for (const item of items) {
+			const itemPath = path.join(dirPath, item.name);
+			const relativePath = basePath ? `${basePath}/${item.name}` : item.name;
+
+			if (item.isDirectory()) {
+				// Add folder entry
+				files.push({
+					filename: item.name,
+					content: '',
+					size: 0,
+					folderPath: basePath || undefined,
+					isFolder: true,
+					timestamp: new Date()
+				});
+
+				// Recursively read subdirectory
+				const subFiles = await readFilesRecursivelyWithStatus(
+					itemPath,
+					relativePath,
+					alias,
+					publicKey,
+					readStatus
+				);
+				files.push(...subFiles);
+			} else if (item.isFile() && (item.name.endsWith('.md') || item.name.endsWith('.txt'))) {
+				// Read markdown or text file
+				try {
+					const content = await fs.readFile(itemPath, 'utf8');
+					const stats = await fs.stat(itemPath);
+					const fileKey = getFileKey(alias, publicKey, relativePath);
+
+					files.push({
+						filename: item.name,
+						content: content,
+						size: stats.size,
+						folderPath: basePath || undefined,
+						isRead: !!readStatus[fileKey],
+						timestamp: stats.mtime
+					});
+				} catch (readError) {
+					console.warn(`Failed to read file ${itemPath}:`, readError);
+				}
+			}
+		}
+	} catch (error) {
+		console.error(`Error reading directory ${dirPath}:`, error);
+	}
+
+	return files;
 }

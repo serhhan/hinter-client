@@ -1,6 +1,6 @@
 <script lang="ts">
 	import type { Peer } from '$lib/types/peer';
-	import { afterNavigate } from '$app/navigation';
+	import { afterNavigate, goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import Avatar from './Avatar.svelte';
 
@@ -19,14 +19,22 @@
 
 	// Get unread count from peer object
 	$: unreadCount = peer.unreadCount || 0;
+
+	// Handle peer click with programmatic navigation
+	function handlePeerClick() {
+		goto(`/peers/${encodeURIComponent(peer.publicKey)}`);
+	}
 </script>
 
-<a href={`/peers/${encodeURIComponent(peer.publicKey)}`}>
-	<div
-		class="flex w-full cursor-pointer items-center gap-2 {isSelected
-			? 'border-l-4 border-blue-500 bg-blue-100'
-			: 'hover:bg-gray-100'}"
-	>
+<div
+	class="flex w-full cursor-pointer items-center gap-2 {isSelected
+		? 'border-l-4 border-blue-500 bg-blue-100'
+		: 'hover:bg-gray-100'}"
+	onclick={handlePeerClick}
+	role="button"
+	tabindex="0"
+	onkeydown={(e) => e.key === 'Enter' && handlePeerClick()}
+>
 		<div class="flex w-full items-center gap-2 p-2">
 			<div class="relative flex-shrink-0">
 				<Avatar seed={peer.publicKey} alt={peer.alias} size="sm" style="notionists-neutral" />
@@ -54,5 +62,4 @@
 				</div>
 			</div>
 		</div>
-	</div>
-</a>
+</div>
