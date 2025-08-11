@@ -205,7 +205,9 @@ export async function syncReports(): Promise<SyncResult> {
 
 				// If we have sourceFiles, put everything inside a folder
 				// Otherwise, just put the report at root level
-				if (sourceFiles.length > 0) {
+				// If package name is specified (destinationPath), always use folder structure
+				// If no package name but has files, also use folder structure
+				if (destinationPath || sourceFiles.length > 0) {
 					// Package approach: create folder with report + files inside
 					const reportDestination = `${baseDestination}/${entry.filename}`;
 					for (const peerAlias of recipients) {
@@ -226,7 +228,6 @@ export async function syncReports(): Promise<SyncResult> {
 						});
 					}
 				}
-
 				// If sourceFiles are provided, include them in the package
 				if (sourceFiles.length > 0) {
 					for (const sourceFile of sourceFiles) {

@@ -1,22 +1,23 @@
 <script lang="ts">
 	import type { Peer } from '$lib/types/peer';
+	import type { Entry } from '$lib/types/entry';
+	import { parseMetadata } from '$lib/utils/metadata-parser';
 	import PeerDropdown from './PeerDropdown.svelte';
 	import CloseIcon from '../assets/CloseIcon.svelte';
-	import {
-		validateDestinationPath,
-		getDestinationPreview,
-		normalizePath
-	} from '$lib/utils/path-utils';
+	import { validateDestinationPath } from '$lib/utils/path-utils';
 
 	interface Props {
 		isOpen?: boolean;
 		peers?: Peer[];
-		creating?: boolean;
+		mode: 'create' | 'edit';
+		entry?: Entry | null;
+		loading?: boolean;
 		onclose?: () => void;
 		onsubmit?: (data: {
 			content: string;
-			isPinned: boolean;
-			suffix: string;
+			filename?: string;
+			isPinned?: boolean;
+			suffix?: string;
 			to: string[];
 			except: string[];
 			sourceFiles: string[];
@@ -27,15 +28,18 @@
 	let {
 		isOpen = $bindable(false),
 		peers = [],
-		creating = false,
+		mode = 'create',
+		entry = null,
+		loading = false,
 		onclose,
 		onsubmit
 	}: Props = $props();
 
 	// Form state
 	let content = $state('');
-	let isPinned = $state(false);
-	let suffix = $state('');
+	let isPinned = $state(mode === 'create' ? false : undefined);
+	let suffix = $state(mode === 'create' ? '' : undefined);
+	let filename = $state(mode === 'edit' ? entry?.filename?.replace('.md', '') : undefined);
 	let to = $state<string[]>([]);
 	let except = $state<string[]>([]);
 	let sourceFiles = $state<File[]>([]);
@@ -45,13 +49,45 @@
 	const destinationPathValidation = $derived(validateDestinationPath(destinationPath));
 	const isPathValid = $derived(destinationPathValidation.isValid);
 
-	// Destination preview
-	const destinationPreview = $derived(
-		getDestinationPreview('', destinationPath, `${suffix || 'report'}.md`)
+	// Package name (folder name) - no .md extension
+	const packageName = $derived(
+		destinationPath.trim()
+			? destinationPath.replace(/.md$/, '') // Remove .md if present
+			: mode === 'create'
+				? suffix || 'report'
+				: filename || 'report'
 	);
+
+	// Auto-generated filename with realistic timestamp
+	const autoFilename = $derived(() => {
+		const now = new Date();
+		const timestamp = now
+			.toISOString()
+			.replace(/[-T:.Z]/g, '')
+			.slice(0, 14);
+		if (mode === 'create') {
+			return `${timestamp}${suffix ? `-${suffix}` : ''}.md`;
+		} else {
+			return `${timestamp}${filename ? `-${filename}` : ''}.md`;
+		}
+	});
+
+	// Load entry data in edit mode
+	$effect(() => {
+		if (mode === 'edit' && entry && isOpen) {
+			const metadata = parseMetadata(entry.content);
+			content = metadata.cleanContent;
+			filename = entry.filename.replace('.md', '');
+			to = [...metadata.to];
+			except = [...metadata.except];
+			sourceFiles = []; // Note: File objects can't be restored from metadata
+			destinationPath = metadata.destinationPath;
+		}
+	});
 
 	async function handleSubmit() {
 		if (!content.trim() || !isPathValid) return;
+		if (mode === 'edit' && !filename?.trim()) return;
 
 		let uploadedFilePaths: string[] = [];
 
@@ -81,20 +117,23 @@
 
 		onsubmit?.({
 			content,
-			isPinned,
-			suffix,
+			...(mode === 'create' ? { isPinned, suffix } : { filename }),
 			to,
 			except,
 			sourceFiles: uploadedFilePaths,
-			destinationPath: normalizePath(destinationPath)
+			destinationPath: packageName
 		});
 	}
 
 	function handleClose() {
 		// Reset form
 		content = '';
-		suffix = '';
-		isPinned = false;
+		if (mode === 'create') {
+			isPinned = false;
+			suffix = '';
+		} else {
+			filename = '';
+		}
 		to = [];
 		except = [];
 		sourceFiles = [];
@@ -152,7 +191,9 @@
 	>
 		<div class="w-full max-w-2xl rounded-lg bg-white p-6">
 			<div class="mb-4 flex items-center justify-between">
-				<h3 class="text-lg font-medium text-gray-900">Create New Entry</h3>
+				<h3 class="text-lg font-medium text-gray-900">
+					{mode === 'create' ? 'Create New Entry' : 'Edit Entry'}
+				</h3>
 				<button onclick={handleClose} class="text-gray-500 hover:text-gray-700">
 					<CloseIcon />
 				</button>
@@ -165,43 +206,64 @@
 				}}
 				class="space-y-4"
 			>
+				<!-- Mode-specific fields -->
+				{#if mode === 'create'}
+					<!-- Filename suffix and Pin -->
+					<div class="grid grid-cols-2 gap-4">
+						<div>
+							<label for="newSuffix" class="block text-sm font-medium text-gray-700">
+								Filename suffix (optional)
+							</label>
+							<input
+								type="text"
+								id="newSuffix"
+								bind:value={suffix}
+								class="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none"
+								placeholder="e.g., draft, final"
+							/>
+							<p class="mt-1 text-xs text-gray-500">Will be added to the auto-generated filename</p>
+						</div>
+						<div class="flex items-center pt-6">
+							<input
+								type="checkbox"
+								id="newPinned"
+								bind:checked={isPinned}
+								class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+							/>
+							<label for="newPinned" class="ml-2 text-sm text-gray-700">Pin this entry</label>
+						</div>
+					</div>
+				{:else}
+					<!-- Filename -->
+					<div>
+						<label for="editFilename" class="block text-sm font-medium text-gray-700"
+							>Filename</label
+						>
+						<input
+							type="text"
+							id="editFilename"
+							bind:value={filename}
+							class="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none"
+							placeholder="Enter filename"
+							required
+						/>
+						<p class="mt-1 text-xs text-gray-500">
+							.md extension will be added automatically if not present
+						</p>
+					</div>
+				{/if}
+
 				<!-- Content -->
 				<div>
-					<label for="newContent" class="block text-sm font-medium text-gray-700">Content</label>
+					<label for="content" class="block text-sm font-medium text-gray-700">Content</label>
 					<textarea
-						id="newContent"
+						id="content"
 						bind:value={content}
-						rows="8"
+						rows={mode === 'create' ? 8 : 10}
 						class="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none"
 						placeholder="Enter your entry content..."
 						required
 					></textarea>
-				</div>
-
-				<!-- Filename and Pin -->
-				<div class="grid grid-cols-2 gap-4">
-					<div>
-						<label for="newSuffix" class="block text-sm font-medium text-gray-700">
-							Filename suffix (optional)
-						</label>
-						<input
-							type="text"
-							id="newSuffix"
-							bind:value={suffix}
-							class="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none"
-							placeholder="e.g., draft, final"
-						/>
-						<p class="mt-1 text-xs text-gray-500">Will be added to the auto-generated filename</p>
-					</div>
-					<div class="flex items-center pt-6">
-						<input
-							type="checkbox"
-							id="newPinned"
-							bind:checked={isPinned}
-							class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-						/>
-						<label for="newPinned" class="ml-2 text-sm text-gray-700">Pin this entry</label>
-					</div>
 				</div>
 
 				<!-- Draft Report Fields -->
@@ -252,14 +314,14 @@
 
 							{#if sourceFiles.length > 0}
 								<div class="mt-2 space-y-1">
-									{#each sourceFiles as file, index}
+									{#each sourceFiles as file, i (file.name)}
 										<div
 											class="flex items-center justify-between rounded bg-gray-50 px-2 py-1 text-sm"
 										>
 											<span class="truncate">{file.name}</span>
 											<button
 												type="button"
-												onclick={() => removeFile(index)}
+												onclick={() => removeFile(i)}
 												class="ml-2 text-red-500 hover:text-red-700"
 												aria-label="Remove file"
 											>
@@ -274,28 +336,50 @@
 							{/if}
 						</div>
 						<div>
-							<label for="newDestinationPath" class="block text-sm font-medium text-gray-700">
-								Package Destination (optional)
+							<label for="destinationPath" class="block text-sm font-medium text-gray-700">
+								Report Package Name (optional)
 							</label>
 							<input
 								type="text"
-								id="newDestinationPath"
+								id="destinationPath"
 								bind:value={destinationPath}
 								class="mt-1 block w-full rounded-md border {destinationPathValidation.isValid
 									? 'border-gray-300'
 									: 'border-red-300'} px-3 py-2 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none"
-								placeholder="e.g., reports/weekly"
 							/>
 							{#if !destinationPathValidation.isValid}
 								<p class="mt-1 text-xs text-red-600">{destinationPathValidation.error}</p>
+							{:else if packageName !== 'report' || sourceFiles.length > 0}
+								<!-- Visual file structure preview - show folder when package name is set OR files exist -->
+								<div class="mt-2 rounded-md bg-gray-50 p-3 font-mono text-xs">
+									<div class="mb-1 text-gray-600">📦 Package structure:</div>
+									<div class="text-gray-800">
+										📁 <strong>{packageName}</strong>/
+										<div class="ml-4">
+											📄 {autoFilename()}
+											{#if sourceFiles.length > 0}
+												<br />📁 files/
+												{#each sourceFiles.slice(0, 3) as file (file.name)}
+													<div class="ml-8">
+														{#if file.type.startsWith('image/')}
+															🖼️ {file.name}
+														{:else}
+															📄 {file.name}
+														{/if}
+													</div>
+												{/each}
+												{#if sourceFiles.length > 3}
+													<div class="ml-8 text-gray-500">
+														... and {sourceFiles.length - 3} more files
+													</div>
+												{/if}
+											{/if}
+										</div>
+									</div>
+								</div>
 							{:else}
 								<p class="mt-1 text-xs text-gray-500">
-									Package will be saved as: <strong>{destinationPreview}</strong>
-									{#if sourceFiles.length > 0}
-										<br /><span class="text-green-600"
-											>+ {sourceFiles.length} additional files included</span
-										>
-									{/if}
+									Will create: <strong>{autoFilename()}</strong>
 								</p>
 							{/if}
 						</div>
@@ -313,10 +397,13 @@
 					</button>
 					<button
 						type="submit"
-						disabled={creating || !content.trim() || !isPathValid}
+						disabled={loading ||
+							!content.trim() ||
+							!isPathValid ||
+							(mode === 'edit' && !filename?.trim())}
 						class="flex items-center gap-2 rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
 					>
-						{#if creating}
+						{#if loading}
 							<svg class="h-4 w-4 animate-spin" fill="none" viewBox="0 0 24 24">
 								<circle
 									class="opacity-25"
@@ -332,9 +419,9 @@
 									d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
 								></path>
 							</svg>
-							Creating...
+							{mode === 'create' ? 'Creating...' : 'Updating...'}
 						{:else}
-							Create Entry
+							{mode === 'create' ? 'Create Entry' : 'Update Entry'}
 						{/if}
 					</button>
 				</div>

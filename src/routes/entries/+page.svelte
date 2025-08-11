@@ -1,8 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { addToast } from '$lib/stores/toast-store';
-	import CreateEntryModal from '../../components/CreateEntryModal.svelte';
-	import EditEntryModal from '../../components/EditEntryModal.svelte';
+	import EntryModal from '../../components/EntryModal.svelte';
 	import DeleteEntryModal from '../../components/DeleteEntryModal.svelte';
 	import EntryCard from '../../components/EntryCard.svelte';
 	import {
@@ -68,8 +67,8 @@
 	// Create entry handler
 	async function handleCreateEntry(data: {
 		content: string;
-		isPinned: boolean;
-		suffix: string;
+		isPinned?: boolean;
+		suffix?: string;
 		to: string[];
 		except: string[];
 		sourceFiles: string[];
@@ -115,7 +114,9 @@
 
 	async function handleSaveEdit(data: {
 		content: string;
-		filename: string;
+		filename?: string;
+		isPinned?: boolean;
+		suffix?: string;
 		to: string[];
 		except: string[];
 		sourceFiles: string[];
@@ -134,7 +135,7 @@
 
 			await updateEntry(editingEntry.filename, contentToSave, editingEntry.isPinned);
 
-			if (needsRename) {
+			if (needsRename && filename) {
 				await renameEntry(editingEntry.filename, filename, editingEntry.isPinned);
 			}
 
@@ -377,19 +378,21 @@
 </div>
 
 <!-- Modals -->
-<CreateEntryModal
+<EntryModal
 	bind:isOpen={showCreateModal}
 	{peers}
-	creating={creatingEntry}
+	mode="create"
+	loading={creatingEntry}
 	onclose={() => (showCreateModal = false)}
 	onsubmit={handleCreateEntry}
 />
 
-<EditEntryModal
+<EntryModal
 	bind:isOpen={showEditModal}
 	{peers}
+	mode="edit"
 	entry={editingEntry}
-	updating={updatingEntry}
+	loading={updatingEntry}
 	onclose={() => (showEditModal = false)}
 	onsubmit={handleSaveEdit}
 />
