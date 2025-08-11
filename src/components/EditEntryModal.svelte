@@ -4,6 +4,11 @@
 	import { parseMetadata } from '$lib/utils/metadata-parser';
 	import PeerDropdown from './PeerDropdown.svelte';
 	import CloseIcon from '../assets/CloseIcon.svelte';
+	import {
+		validateDestinationPath,
+		getDestinationPreview,
+		normalizePath
+	} from '$lib/utils/path-utils';
 
 	interface Props {
 		isOpen?: boolean;
@@ -16,7 +21,7 @@
 			filename: string;
 			to: string[];
 			except: string[];
-			sourcePath: string;
+			sourceFiles: string[];
 			destinationPath: string;
 		}) => void;
 	}
@@ -35,8 +40,17 @@
 	let filename = $state('');
 	let to = $state<string[]>([]);
 	let except = $state<string[]>([]);
-	let sourcePath = $state('');
+	let sourceFiles = $state<File[]>([]);
 	let destinationPath = $state('');
+
+	// Path validation
+	const destinationPathValidation = $derived(validateDestinationPath(destinationPath));
+	const isPathValid = $derived(destinationPathValidation.isValid);
+
+	// Destination preview
+	const destinationPreview = $derived(
+		getDestinationPreview('', destinationPath, `${filename || 'report'}.md`)
+	);
 
 	// Auto-populate form when entry changes
 	$effect(() => {
@@ -46,7 +60,7 @@
 			filename = entry.filename.replace('.md', '');
 			to = [...metadata.to];
 			except = [...metadata.except];
-			sourcePath = metadata.sourcePath;
+			sourceFiles = []; // Note: File objects can't be restored from metadata
 			destinationPath = metadata.destinationPath;
 		}
 	});
@@ -56,31 +70,77 @@
 		content: string;
 		to: string[];
 		except: string[];
-		sourcePath: string;
+		sourceFiles: string[];
 		destinationPath: string;
 	}) {
 		content = data.content;
 		to = [...data.to];
 		except = [...data.except];
-		sourcePath = data.sourcePath;
+		// Note: Can't restore File objects from strings
+		sourceFiles = [];
 		destinationPath = data.destinationPath;
 	}
 
-	function handleSubmit() {
+	async function handleSubmit() {
 		if (!content.trim() || !filename.trim()) return;
+
+		let uploadedFilePaths: string[] = [];
+
+		// Upload files if any are selected
+		if (sourceFiles.length > 0) {
+			const formData = new FormData();
+			sourceFiles.forEach((file) => formData.append('files', file));
+
+			try {
+				const response = await fetch('/api/upload', {
+					method: 'POST',
+					body: formData
+				});
+
+				if (response.ok) {
+					const result = await response.json();
+					uploadedFilePaths = result.files;
+				} else {
+					console.error('Failed to upload files');
+					return;
+				}
+			} catch (error) {
+				console.error('Error uploading files:', error);
+				return;
+			}
+		}
 
 		onsubmit?.({
 			content,
 			filename,
 			to,
 			except,
-			sourcePath,
+			sourceFiles: uploadedFilePaths,
 			destinationPath
 		});
 	}
 
 	function handleClose() {
 		onclose?.();
+	}
+
+	function handleFileInput(event: Event) {
+		const input = event.target as HTMLInputElement;
+		if (input.files) {
+			sourceFiles = Array.from(input.files);
+		}
+	}
+
+	function removeFile(index: number) {
+		sourceFiles = sourceFiles.filter((_, i) => i !== index);
+	}
+
+	function openFileDialog() {
+		const input = document.createElement('input');
+		input.type = 'file';
+		input.multiple = true;
+		input.onchange = handleFileInput;
+		input.click();
 	}
 
 	// Close on Escape key
@@ -181,31 +241,73 @@
 						/>
 					</div>
 
-					<!-- Source and Destination Paths -->
+					<!-- Files and Destination -->
 					<div class="grid grid-cols-2 gap-4">
 						<div>
-							<label for="editSourcePath" class="block text-sm font-medium text-gray-700">
-								Source Path (optional)
+							<label for="editFileSelectButton" class="block text-sm font-medium text-gray-700">
+								Additional Files (optional)
 							</label>
-							<input
-								type="text"
-								id="editSourcePath"
-								bind:value={sourcePath}
-								class="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none"
-								placeholder="Enter source path"
-							/>
+							<button
+								type="button"
+								id="editFileSelectButton"
+								onclick={openFileDialog}
+								class="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-left hover:bg-gray-50 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none"
+							>
+								{#if sourceFiles.length === 0}
+									<span class="text-gray-500">Select files...</span>
+								{:else}
+									<span class="text-gray-900">{sourceFiles.length} files selected</span>
+								{/if}
+							</button>
+
+							{#if sourceFiles.length > 0}
+								<div class="mt-2 space-y-1">
+									{#each sourceFiles as file, index}
+										<div
+											class="flex items-center justify-between rounded bg-gray-50 px-2 py-1 text-sm"
+										>
+											<span class="truncate">{file.name}</span>
+											<button
+												type="button"
+												onclick={() => removeFile(index)}
+												class="ml-2 text-red-500 hover:text-red-700"
+												aria-label="Remove file"
+											>
+												×
+											</button>
+										</div>
+									{/each}
+								</div>
+								<p class="mt-1 text-xs text-green-600">✓ Files will be included with report</p>
+							{:else}
+								<p class="mt-1 text-xs text-gray-500">Report content only</p>
+							{/if}
 						</div>
 						<div>
 							<label for="editDestinationPath" class="block text-sm font-medium text-gray-700">
-								Destination Path (optional)
+								Package Destination (optional)
 							</label>
 							<input
 								type="text"
 								id="editDestinationPath"
 								bind:value={destinationPath}
-								class="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none"
-								placeholder="Enter destination path"
+								class="mt-1 block w-full rounded-md border {destinationPathValidation.isValid
+									? 'border-gray-300'
+									: 'border-red-300'} px-3 py-2 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none"
+								placeholder="e.g., reports/weekly"
 							/>
+							{#if !destinationPathValidation.isValid}
+								<p class="mt-1 text-xs text-red-600">{destinationPathValidation.error}</p>
+							{:else}
+								<p class="mt-1 text-xs text-gray-500">
+									Package will be saved as: <strong>{destinationPreview}</strong>
+									{#if sourceFiles.length > 0}
+										<br /><span class="text-green-600"
+											>+ {sourceFiles.length} additional files included</span
+										>
+									{/if}
+								</p>
+							{/if}
 						</div>
 					</div>
 				</div>

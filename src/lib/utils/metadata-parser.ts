@@ -1,7 +1,8 @@
 export interface ParsedMetadata {
 	to: string[];
 	except: string[];
-	sourcePath: string;
+	sourcePath: string; // Legacy: single file path
+	sourceFiles: string[]; // New: multiple file paths
 	destinationPath: string;
 	cleanContent: string;
 }
@@ -12,6 +13,7 @@ export function parseMetadata(content: string): ParsedMetadata {
 		to: [],
 		except: [],
 		sourcePath: '',
+		sourceFiles: [],
 		destinationPath: '',
 		cleanContent: content
 	};
@@ -43,10 +45,24 @@ export function parseMetadata(content: string): ParsedMetadata {
 				metadata.except = exceptItems.filter((item) => item.length > 0);
 			}
 
-			// Parse sourcePath
+			// Parse sourcePath (legacy single file)
 			const sourcePathMatch = yamlContent.match(/sourcePath:\s*['"]([^'"]*)['"]/);
 			if (sourcePathMatch) {
 				metadata.sourcePath = sourcePathMatch[1];
+			}
+
+			// Parse sourceFiles (new multiple files array)
+			const sourceFilesMatch = yamlContent.match(/sourceFiles:\s*\[\s*([\s\S]*?)\s*\]/);
+			if (sourceFilesMatch) {
+				const sourceFileItems = sourceFilesMatch[1]
+					.split(',')
+					.map((item) => item.trim().replace(/'/g, '').replace(/"/g, ''));
+				metadata.sourceFiles = sourceFileItems.filter((item) => item.length > 0);
+			}
+
+			// If we have sourcePath but no sourceFiles, use sourcePath for backward compatibility
+			if (metadata.sourcePath && metadata.sourceFiles.length === 0) {
+				metadata.sourceFiles = [metadata.sourcePath];
 			}
 
 			// Parse destinationPath
@@ -59,25 +75,43 @@ export function parseMetadata(content: string): ParsedMetadata {
 			console.warn('Failed to parse YAML metadata:', e);
 		}
 	} else {
-		// Fallback: Look for old format metadata at the beginning of the content
-		const metadataRegex =
-			/^to:\s*(\[.*?\])\s*except:\s*(\[.*?\])\s*sourcePath:\s*'([^']*)'?\s*destinationPath:\s*'([^']*)'?\s*\n\n([\s\S]*)/;
-		const match = content.match(metadataRegex);
+		// Look for inline metadata format (current format used by the app)
+		const inlineRegex = /^(.+?)\n\n([\s\S]*)$/;
+		const inlineMatch = content.match(inlineRegex);
 
-		if (match) {
+		if (inlineMatch) {
+			const metadataLine = inlineMatch[1];
+			const bodyContent = inlineMatch[2];
+
+			// Parse individual fields from the metadata line
+			const toMatch = metadataLine.match(/to:\s*(\[.*?\])/);
+			const exceptMatch = metadataLine.match(/except:\s*(\[.*?\])/);
+			const sourceFilesMatch = metadataLine.match(/sourceFiles:\s*(\[.*?\])/);
+			const destinationPathMatch = metadataLine.match(/destinationPath:\s*['"]([^'"]*)['"]/);
+
 			try {
-				// Parse arrays safely
-				const toArray = JSON.parse(match[1].replace(/'/g, '"'));
-				const exceptArray = JSON.parse(match[2].replace(/'/g, '"'));
+				if (toMatch) {
+					const toArray = JSON.parse(toMatch[1].replace(/'/g, '"'));
+					metadata.to = Array.isArray(toArray) ? toArray : [];
+				}
 
-				metadata.to = Array.isArray(toArray) ? toArray : [];
-				metadata.except = Array.isArray(exceptArray) ? exceptArray : [];
-				metadata.sourcePath = match[3] || '';
-				metadata.destinationPath = match[4] || '';
-				metadata.cleanContent = match[5] || content;
+				if (exceptMatch) {
+					const exceptArray = JSON.parse(exceptMatch[1].replace(/'/g, '"'));
+					metadata.except = Array.isArray(exceptArray) ? exceptArray : [];
+				}
+
+				if (sourceFilesMatch) {
+					const sourceFilesArray = JSON.parse(sourceFilesMatch[1].replace(/'/g, '"'));
+					metadata.sourceFiles = Array.isArray(sourceFilesArray) ? sourceFilesArray : [];
+				}
+
+				if (destinationPathMatch) {
+					metadata.destinationPath = destinationPathMatch[1];
+				}
+
+				metadata.cleanContent = bodyContent;
 			} catch (e) {
-				// If parsing fails, return original content
-				console.warn('Failed to parse metadata:', e);
+				console.warn('Failed to parse inline metadata:', e);
 			}
 		}
 	}
@@ -89,10 +123,10 @@ export function parseMetadata(content: string): ParsedMetadata {
 export function generateMetadataHeader(
 	to: string[],
 	except: string[],
-	sourcePath: string,
+	sourceFiles: string[],
 	destinationPath: string
 ): string {
-	if (to.length === 0 && except.length === 0 && !sourcePath && !destinationPath) {
+	if (to.length === 0 && except.length === 0 && sourceFiles.length === 0 && !destinationPath) {
 		return '';
 	}
 
@@ -100,12 +134,16 @@ export function generateMetadataHeader(
 		to.length > 0 ? `[\n    ${to.map((peer) => `'${peer}'`).join(',\n    ')}\n  ]` : '[]';
 	const exceptArray =
 		except.length > 0 ? `[\n    ${except.map((peer) => `'${peer}'`).join(',\n    ')}\n  ]` : '[]';
+	const sourceFilesArray =
+		sourceFiles.length > 0
+			? `[\n    ${sourceFiles.map((file) => `'${file}'`).join(',\n    ')}\n  ]`
+			: '[]';
 
 	return `---
 to:
   ${toArray}
 except: ${exceptArray}
-sourcePath: '${sourcePath}'
+sourceFiles: ${sourceFilesArray}
 destinationPath: '${destinationPath}'
 ---
 

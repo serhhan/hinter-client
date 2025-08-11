@@ -72,10 +72,10 @@
 		suffix: string;
 		to: string[];
 		except: string[];
-		sourcePath: string;
+		sourceFiles: string[];
 		destinationPath: string;
 	}) {
-		const { content, isPinned, suffix, to, except, sourcePath, destinationPath } = data;
+		const { content, isPinned, suffix, to, except, sourceFiles, destinationPath } = data;
 
 		creatingEntry = true;
 
@@ -86,7 +86,7 @@
 				isPinned,
 				to: to.length > 0 ? to : undefined,
 				except: except.length > 0 ? except : undefined,
-				sourcePath: sourcePath.trim() || undefined,
+				sourceFiles: sourceFiles.length > 0 ? sourceFiles : undefined,
 				destinationPath: destinationPath.trim() || undefined
 			} as CreateEntryRequest);
 
@@ -118,18 +118,18 @@
 		filename: string;
 		to: string[];
 		except: string[];
-		sourcePath: string;
+		sourceFiles: string[];
 		destinationPath: string;
 	}) {
 		if (!editingEntry) return;
 
-		const { content, filename, to, except, sourcePath, destinationPath } = data;
+		const { content, filename, to, except, sourceFiles, destinationPath } = data;
 
 		updatingEntry = true;
 
 		try {
 			const needsRename = filename !== editingEntry.filename.replace('.md', '');
-			const metadataHeader = generateMetadataHeader(to, except, sourcePath, destinationPath);
+			const metadataHeader = generateMetadataHeader(to, except, sourceFiles, destinationPath);
 			const contentToSave = metadataHeader + content;
 
 			await updateEntry(editingEntry.filename, contentToSave, editingEntry.isPinned);

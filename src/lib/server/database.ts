@@ -36,10 +36,21 @@ export interface ReadStatus {
 }
 
 // Paths - relative to project root
-const DATA_DIR = path.join(process.cwd(), 'hinter-core-data');
-const PEERS_DIR = path.join(DATA_DIR, 'peers');
-const ENTRIES_DIR = path.join(DATA_DIR, 'entries');
-const READ_STATUS_FILE = path.join(DATA_DIR, 'read_status.json');
+function getDataDir() {
+	return path.join(process.cwd(), 'hinter-core-data');
+}
+
+function getPeersDir() {
+	return path.join(getDataDir(), 'peers');
+}
+
+function getEntriesDir() {
+	return path.join(getDataDir(), 'entries');
+}
+
+function getReadStatusFile() {
+	return path.join(getDataDir(), 'read_status.json');
+}
 
 // Utility function to ensure directory exists
 export async function ensureDir(dirPath: string): Promise<void> {
@@ -54,12 +65,12 @@ export async function ensureDir(dirPath: string): Promise<void> {
 export async function getReadStatus(): Promise<ReadStatus> {
 	try {
 		const exists = await fs
-			.access(READ_STATUS_FILE)
+			.access(getReadStatusFile())
 			.then(() => true)
 			.catch(() => false);
 
 		if (exists) {
-			const content = await fs.readFile(READ_STATUS_FILE, 'utf8');
+			const content = await fs.readFile(getReadStatusFile(), 'utf8');
 			if (!content.trim()) {
 				return {};
 			}
@@ -73,8 +84,8 @@ export async function getReadStatus(): Promise<ReadStatus> {
 
 export async function saveReadStatus(readStatus: ReadStatus): Promise<void> {
 	try {
-		await ensureDir(DATA_DIR);
-		await fs.writeFile(READ_STATUS_FILE, JSON.stringify(readStatus, null, 2));
+		await ensureDir(getDataDir());
+		await fs.writeFile(getReadStatusFile(), JSON.stringify(readStatus, null, 2));
 	} catch (error) {
 		console.error('Error saving read status file:', error);
 	}
@@ -87,7 +98,7 @@ export function getFileKey(alias: string, publicKey: string, filepath: string): 
 // Get all peers
 export async function getAllPeers(): Promise<Peer[]> {
 	try {
-		const peerDirs = await fs.readdir(PEERS_DIR, { withFileTypes: true });
+		const peerDirs = await fs.readdir(getPeersDir(), { withFileTypes: true });
 		const peers: Peer[] = [];
 
 		for (const dir of peerDirs) {
@@ -95,7 +106,7 @@ export async function getAllPeers(): Promise<Peer[]> {
 				const alias = dir.name;
 
 				// Read the hinter.config.json to get the publicKey
-				const configPath = path.join(PEERS_DIR, dir.name, 'hinter.config.json');
+				const configPath = path.join(getPeersDir(), dir.name, 'hinter.config.json');
 				let publicKey = '';
 
 				try {
@@ -107,8 +118,8 @@ export async function getAllPeers(): Promise<Peer[]> {
 					continue; // Skip this peer if config is invalid
 				}
 
-				const incomingDir = path.join(PEERS_DIR, dir.name, 'incoming');
-				const outgoingDir = path.join(PEERS_DIR, dir.name, 'outgoing');
+				const incomingDir = path.join(getPeersDir(), dir.name, 'incoming');
+				const outgoingDir = path.join(getPeersDir(), dir.name, 'outgoing');
 
 				let incomingCount = 0;
 				let outgoingCount = 0;
@@ -178,7 +189,7 @@ export async function addPeer(alias: string, publicKey: string): Promise<void> {
 		throw new Error('Public key must be 64 lowercase hexadecimal characters');
 	}
 
-	const peerDir = path.join(PEERS_DIR, alias);
+	const peerDir = path.join(getPeersDir(), alias);
 	const incomingDir = path.join(peerDir, 'incoming');
 	const outgoingDir = path.join(peerDir, 'outgoing');
 	const configPath = path.join(peerDir, 'hinter.config.json');
@@ -206,8 +217,8 @@ export async function updatePeerAlias(
 	publicKey: string,
 	newAlias: string
 ): Promise<void> {
-	const oldPeerDir = path.join(PEERS_DIR, oldAlias);
-	const newPeerDir = path.join(PEERS_DIR, newAlias);
+	const oldPeerDir = path.join(getPeersDir(), oldAlias);
+	const newPeerDir = path.join(getPeersDir(), newAlias);
 
 	// Check if old peer exists
 	try {
@@ -266,7 +277,7 @@ export async function updatePeerPublicKey(
 	oldPublicKey: string,
 	newPublicKey: string
 ): Promise<void> {
-	const peerDir = path.join(PEERS_DIR, alias);
+	const peerDir = path.join(getPeersDir(), alias);
 
 	// Check if peer exists
 	try {
@@ -321,7 +332,7 @@ export async function updatePeerPublicKey(
 // Remove peer
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 export async function removePeer(alias: string, _publicKey: string): Promise<void> {
-	const peerDir = path.join(PEERS_DIR, alias);
+	const peerDir = path.join(getPeersDir(), alias);
 	await fs.rm(peerDir, { recursive: true, force: true });
 }
 
@@ -365,7 +376,7 @@ export async function createOutgoingReport(
 		.replace(/[-T:.Z]/g, '')
 		.slice(0, 14);
 	const filename = `${timestamp}${suffix}.md`;
-	const outgoingDir = path.join(PEERS_DIR, alias, 'outgoing');
+	const outgoingDir = path.join(getPeersDir(), alias, 'outgoing');
 	const filePath = path.join(outgoingDir, filename);
 
 	await ensureDir(outgoingDir);
@@ -377,12 +388,12 @@ export async function createOutgoingReport(
 // Get all entries
 export async function getAllEntries(): Promise<Entry[]> {
 	try {
-		const files = await fs.readdir(ENTRIES_DIR);
+		const files = await fs.readdir(getEntriesDir());
 		const entries: Entry[] = [];
 
 		for (const file of files) {
 			if (file.endsWith('.md')) {
-				const filePath = path.join(ENTRIES_DIR, file);
+				const filePath = path.join(getEntriesDir(), file);
 				const content = await fs.readFile(filePath, 'utf8');
 				const stats = await fs.stat(filePath);
 
@@ -398,7 +409,7 @@ export async function getAllEntries(): Promise<Entry[]> {
 
 		// Get pinned entries
 		try {
-			const pinnedDir = path.join(ENTRIES_DIR, 'pinned');
+			const pinnedDir = path.join(getEntriesDir(), 'pinned');
 			const pinnedFiles = await fs.readdir(pinnedDir);
 
 			for (const file of pinnedFiles) {
@@ -447,7 +458,7 @@ export async function createEntry(
 		.slice(0, 14);
 	const filename = `${timestamp}${suffix}.md`;
 
-	const targetDir = isPinned ? path.join(ENTRIES_DIR, 'pinned') : ENTRIES_DIR;
+	const targetDir = isPinned ? path.join(getEntriesDir(), 'pinned') : getEntriesDir();
 	const filePath = path.join(targetDir, filename);
 
 	await ensureDir(targetDir);
@@ -466,7 +477,7 @@ export async function updateEntry(
 		throw new Error('Content is required');
 	}
 
-	const targetDir = isPinned ? path.join(ENTRIES_DIR, 'pinned') : ENTRIES_DIR;
+	const targetDir = isPinned ? path.join(getEntriesDir(), 'pinned') : getEntriesDir();
 	const filePath = path.join(targetDir, filename);
 
 	try {
@@ -479,7 +490,7 @@ export async function updateEntry(
 
 // Delete entry
 export async function deleteEntry(filename: string, isPinned: boolean): Promise<void> {
-	const targetDir = isPinned ? path.join(ENTRIES_DIR, 'pinned') : ENTRIES_DIR;
+	const targetDir = isPinned ? path.join(getEntriesDir(), 'pinned') : getEntriesDir();
 	const filePath = path.join(targetDir, filename);
 
 	try {
@@ -499,7 +510,7 @@ export async function renameEntry(
 		newFilename += '.md';
 	}
 
-	const targetDir = isPinned ? path.join(ENTRIES_DIR, 'pinned') : ENTRIES_DIR;
+	const targetDir = isPinned ? path.join(getEntriesDir(), 'pinned') : getEntriesDir();
 	const oldPath = path.join(targetDir, oldFilename);
 	const newPath = path.join(targetDir, newFilename);
 
@@ -513,8 +524,8 @@ export async function renameEntry(
 
 // Toggle entry pin status (move between regular and pinned directories)
 export async function toggleEntryPin(filename: string, currentlyPinned: boolean): Promise<void> {
-	const sourceDir = currentlyPinned ? path.join(ENTRIES_DIR, 'pinned') : ENTRIES_DIR;
-	const targetDir = currentlyPinned ? ENTRIES_DIR : path.join(ENTRIES_DIR, 'pinned');
+	const sourceDir = currentlyPinned ? path.join(getEntriesDir(), 'pinned') : getEntriesDir();
+	const targetDir = currentlyPinned ? getEntriesDir() : path.join(getEntriesDir(), 'pinned');
 	const sourcePath = path.join(sourceDir, filename);
 	const targetPath = path.join(targetDir, filename);
 
@@ -541,7 +552,7 @@ export async function markMessageAsRead(
 
 // Get outgoing reports for a specific peer
 export async function getOutgoingReports(alias: string, publicKey: string) {
-	const peerDir = path.join(PEERS_DIR, alias);
+	const peerDir = path.join(getPeersDir(), alias);
 	const outgoingDir = path.join(peerDir, 'outgoing');
 
 	try {
@@ -561,8 +572,8 @@ export async function getOutgoingReports(alias: string, publicKey: string) {
 			return []; // No outgoing files
 		}
 
-		// Read all files recursively
-		const files = await readFilesRecursively(outgoingDir);
+		// Read all files recursively with folder structure (like incoming)
+		const files = await readFilesRecursivelyWithFolders(outgoingDir);
 		return files;
 	} catch (error) {
 		console.error('Error reading outgoing reports:', error);
@@ -572,7 +583,7 @@ export async function getOutgoingReports(alias: string, publicKey: string) {
 
 // Get incoming reports for a specific peer with folder structure and read status
 export async function getIncomingReports(alias: string, publicKey: string) {
-	const peerDir = path.join(PEERS_DIR, alias);
+	const peerDir = path.join(getPeersDir(), alias);
 	const incomingDir = path.join(peerDir, 'incoming');
 
 	try {
@@ -640,6 +651,76 @@ async function readFilesRecursively(
 						content: content,
 						size: stats.size,
 						folderPath: basePath || undefined
+					});
+				} catch (readError) {
+					console.warn(`Failed to read file ${itemPath}:`, readError);
+				}
+			}
+		}
+	} catch (error) {
+		console.error(`Error reading directory ${dirPath}:`, error);
+	}
+
+	return files;
+}
+
+// Helper function to read files recursively with folder structure (for outgoing)
+async function readFilesRecursivelyWithFolders(
+	dirPath: string,
+	basePath = ''
+): Promise<
+	Array<{
+		filename: string;
+		content: string;
+		size?: number;
+		folderPath?: string;
+		isFolder?: boolean;
+		timestamp?: Date;
+	}>
+> {
+	const files: Array<{
+		filename: string;
+		content: string;
+		size?: number;
+		folderPath?: string;
+		isFolder?: boolean;
+		timestamp?: Date;
+	}> = [];
+
+	try {
+		const items = await fs.readdir(dirPath, { withFileTypes: true });
+
+		for (const item of items) {
+			const itemPath = path.join(dirPath, item.name);
+			const relativePath = basePath ? `${basePath}/${item.name}` : item.name;
+
+			if (item.isDirectory()) {
+				// Add folder entry
+				const stats = await fs.stat(itemPath);
+				files.push({
+					filename: item.name,
+					content: '',
+					size: 0,
+					folderPath: basePath || undefined,
+					isFolder: true,
+					timestamp: stats.mtime
+				});
+
+				// Recursively read subdirectory
+				const subFiles = await readFilesRecursivelyWithFolders(itemPath, relativePath);
+				files.push(...subFiles);
+			} else if (item.isFile() && (item.name.endsWith('.md') || item.name.endsWith('.txt'))) {
+				// Read markdown or text file
+				try {
+					const content = await fs.readFile(itemPath, 'utf8');
+					const stats = await fs.stat(itemPath);
+
+					files.push({
+						filename: item.name,
+						content: content,
+						size: stats.size,
+						folderPath: basePath || undefined,
+						timestamp: stats.mtime
 					});
 				} catch (readError) {
 					console.warn(`Failed to read file ${itemPath}:`, readError);

@@ -197,54 +197,80 @@ export async function syncReports(): Promise<SyncResult> {
 				}
 
 				const recipients = await calculateFinalRecipients(metadata.to, metadata.except);
-				const sourcePath = metadata.sourcePath;
+				const sourceFiles = metadata.sourceFiles || [];
 				const destinationPath = metadata.destinationPath;
 
-				if (!sourcePath) {
-					// Content-based report
-					const destination = destinationPath || entry.filename;
+				// Determine base destination folder
+				const baseDestination = destinationPath || entry.filename.replace('.md', '');
+
+				// If we have sourceFiles, put everything inside a folder
+				// Otherwise, just put the report at root level
+				if (sourceFiles.length > 0) {
+					// Package approach: create folder with report + files inside
+					const reportDestination = `${baseDestination}/${entry.filename}`;
 					for (const peerAlias of recipients) {
-						peerFiles.get(peerAlias)?.set(destination, {
+						peerFiles.get(peerAlias)?.set(reportDestination, {
 							type: 'content',
 							data: metadata.cleanContent
 						});
 					}
 				} else {
-					// File-based report
-					const absoluteSourcePath = path.resolve(entriesPath, '..', sourcePath);
+					// Simple report: just the .md file at root level
+					const reportDestination = baseDestination.endsWith('.md')
+						? baseDestination
+						: `${baseDestination}.md`;
+					for (const peerAlias of recipients) {
+						peerFiles.get(peerAlias)?.set(reportDestination, {
+							type: 'content',
+							data: metadata.cleanContent
+						});
+					}
+				}
 
-					try {
-						const stats = await fs.stat(absoluteSourcePath);
+				// If sourceFiles are provided, include them in the package
+				if (sourceFiles.length > 0) {
+					for (const sourceFile of sourceFiles) {
+						// sourceFile is now a relative path from hinter-core-data
+						const absoluteSourcePath = path.resolve(process.cwd(), 'hinter-core-data', sourceFile);
 
-						if (stats.isDirectory()) {
-							const destination = destinationPath || path.basename(absoluteSourcePath);
+						try {
+							const stats = await fs.stat(absoluteSourcePath);
 
-							// Walk through directory
-							const files = await walkDirectory(absoluteSourcePath);
-							for (const filePath of files) {
-								const relativePath = path.relative(absoluteSourcePath, filePath);
-								const finalDest = path.join(destination, relativePath);
+							if (stats.isDirectory()) {
+								// Create a folder structure: baseDestination/files/dirName/...
+								const dirName = path.basename(absoluteSourcePath);
+								const filesFolder = `${baseDestination}/files/${dirName}`;
+
+								// Walk through directory
+								const files = await walkDirectory(absoluteSourcePath);
+								for (const filePath of files) {
+									const relativePath = path.relative(absoluteSourcePath, filePath);
+									const finalDest = path.join(filesFolder, relativePath);
+
+									for (const peerAlias of recipients) {
+										peerFiles.get(peerAlias)?.set(finalDest, {
+											type: 'file',
+											path: filePath
+										});
+									}
+								}
+							} else {
+								// Single file: add it to the files folder
+								const fileName = path.basename(absoluteSourcePath);
+								const fileDest = `${baseDestination}/files/${fileName}`;
 
 								for (const peerAlias of recipients) {
-									peerFiles.get(peerAlias)?.set(finalDest, {
+									peerFiles.get(peerAlias)?.set(fileDest, {
 										type: 'file',
-										path: filePath
+										path: absoluteSourcePath
 									});
 								}
 							}
-						} else {
-							const destination = destinationPath || path.basename(absoluteSourcePath);
-							for (const peerAlias of recipients) {
-								peerFiles.get(peerAlias)?.set(destination, {
-									type: 'file',
-									path: absoluteSourcePath
-								});
-							}
+						} catch (error) {
+							result.errors.push(
+								`Error accessing source file ${absoluteSourcePath} for entry ${entry.filename}: ${error}`
+							);
 						}
-					} catch (error) {
-						result.errors.push(
-							`Error accessing source path ${absoluteSourcePath} for entry ${entry.filename}: ${error}`
-						);
 					}
 				}
 			} catch (error) {

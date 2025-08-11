@@ -12,7 +12,7 @@ interface CreateEntryRequest {
 	isPinned?: boolean;
 	to?: string[];
 	except?: string[];
-	sourcePath?: string;
+	sourceFiles?: string[];
 	destinationPath?: string;
 }
 

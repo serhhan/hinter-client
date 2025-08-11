@@ -1,4 +1,16 @@
-import path from 'path';
+// Browser-compatible path utilities
+function isAbsolute(pathStr: string): boolean {
+	return pathStr.startsWith('/') || /^[a-zA-Z]:/.test(pathStr);
+}
+
+function basename(pathStr: string): string {
+	return pathStr.split(/[/\\]/).pop() || '';
+}
+
+function extname(pathStr: string): string {
+	const parts = pathStr.split('.');
+	return parts.length > 1 ? '.' + parts.pop() : '';
+}
 
 /**
  * Validates a source path for report entries
@@ -18,7 +30,7 @@ export function validateSourcePath(sourcePath: string): { isValid: boolean; erro
 	}
 
 	// Check for absolute paths (should be relative to hinter-core-data)
-	if (path.isAbsolute(sourcePath)) {
+	if (isAbsolute(sourcePath)) {
 		return {
 			isValid: false,
 			error: 'Source path should be relative to the hinter-core-data directory'
@@ -57,7 +69,7 @@ export function validateDestinationPath(destinationPath: string): {
 	}
 
 	// Check for absolute paths
-	if (path.isAbsolute(destinationPath)) {
+	if (isAbsolute(destinationPath)) {
 		return {
 			isValid: false,
 			error: 'Destination path should be relative'
@@ -106,7 +118,7 @@ export function getDestinationPreview(
 	}
 
 	if (sourcePath.trim()) {
-		return path.basename(sourcePath);
+		return basename(sourcePath);
 	}
 
 	return entryFilename;
@@ -139,7 +151,7 @@ export function ensureDirectoryPath(pathStr: string): string {
  * Gets the file extension from a path
  */
 export function getFileExtension(pathStr: string): string {
-	return path.extname(pathStr).toLowerCase();
+	return extname(pathStr).toLowerCase();
 }
 
 /**
