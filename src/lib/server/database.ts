@@ -621,49 +621,6 @@ export async function getIncomingReports(alias: string, publicKey: string) {
 	}
 }
 
-// Helper function to read files recursively
-async function readFilesRecursively(
-	dirPath: string,
-	basePath = ''
-): Promise<Array<{ filename: string; content: string; size?: number; folderPath?: string }>> {
-	const files: Array<{ filename: string; content: string; size?: number; folderPath?: string }> =
-		[];
-
-	try {
-		const items = await fs.readdir(dirPath, { withFileTypes: true });
-
-		for (const item of items) {
-			const itemPath = path.join(dirPath, item.name);
-			const relativePath = basePath ? `${basePath}/${item.name}` : item.name;
-
-			if (item.isDirectory()) {
-				// Recursively read subdirectory
-				const subFiles = await readFilesRecursively(itemPath, relativePath);
-				files.push(...subFiles);
-			} else if (item.isFile() && (item.name.endsWith('.md') || item.name.endsWith('.txt'))) {
-				// Read markdown or text file
-				try {
-					const content = await fs.readFile(itemPath, 'utf8');
-					const stats = await fs.stat(itemPath);
-
-					files.push({
-						filename: item.name,
-						content: content,
-						size: stats.size,
-						folderPath: basePath || undefined
-					});
-				} catch (readError) {
-					console.warn(`Failed to read file ${itemPath}:`, readError);
-				}
-			}
-		}
-	} catch (error) {
-		console.error(`Error reading directory ${dirPath}:`, error);
-	}
-
-	return files;
-}
-
 // Helper function to read files recursively with folder structure (for outgoing)
 async function readFilesRecursivelyWithFolders(
 	dirPath: string,
