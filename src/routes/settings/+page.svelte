@@ -104,7 +104,7 @@
 	$: hasEmptyKeys = !editedSettings.PUBLIC_KEY || !editedSettings.SECRET_KEY;
 </script>
 
-<div class="flex-1 p-6">
+<div class="flex-1">
 	<div class="mx-auto max-w-2xl">
 		<div class="mb-8">
 			<h1 class="mb-2 text-2xl font-bold text-gray-900">Settings</h1>

@@ -276,7 +276,7 @@ export const POST: RequestHandler = async ({ request }) => {
 
 			// Build the Docker command (remove -it flags for non-TTY environment)
 			const hostPath = getHostMountPath();
-			const dockerCommand = `docker run --rm -v"${hostPath}":/app/hinter-core-data bbenligiray/hinter-core:latest npm run initialize`;
+			const dockerCommand = `docker run --rm -v "${hostPath}":/app/hinter-core-data bbenligiray/hinter-core:latest npm run initialize`;
 
 			// Execute the Docker command
 			const { stdout, stderr } = await execAsync(dockerCommand, {
